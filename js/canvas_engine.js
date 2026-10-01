@@ -270,6 +270,14 @@ class CanvasEngine {
           this.nodeInitialPositions.clear();
           this.nodeInitialPositions.set(hitNode.id, { x: hitNode.x, y: hitNode.y });
           if (this.onNodeClick) this.onNodeClick(hitNode);
+
+          // 2D 롱프레스 (450ms 꾹 누르기 시 수정창 열기)
+          this.longPressTimer = setTimeout(() => {
+            if (navigator.vibrate) navigator.vibrate(60);
+            if (window.app && window.app.openNodeEditModalFor) {
+              window.app.openNodeEditModalFor(hitNode.id);
+            }
+          }, 450);
         } else {
           this.isPanning = true;
           this.panStart = { x: sx, y: sy };
@@ -307,11 +315,13 @@ class CanvasEngine {
         }
 
         if (this.isDraggingNode) {
+          if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
           this.lastMouseScreen.x = sx;
           this.lastMouseScreen.y = sy;
           this.mouseNeedsCheck = true;
         }
       } else if (e.touches.length === 2) {
+        if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
         // 2손가락 핀치 줌 & 패닝
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -334,6 +344,7 @@ class CanvasEngine {
     }, { passive: false });
 
     this.canvas.addEventListener('touchend', (e) => {
+      if (this.longPressTimer) { clearTimeout(this.longPressTimer); this.longPressTimer = null; }
       if (this.isPanning) {
         this.isPanning = false;
         if (this.onDataChange) this.onDataChange('viewport');

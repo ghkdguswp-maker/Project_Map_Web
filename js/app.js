@@ -51,6 +51,21 @@ class ProjectMapApp {
     this.nodeModalEl = document.getElementById('node-edit-modal');
     this.aiSpecTextarea = document.getElementById('ai-spec-content');
 
+    // 노드 수정 모달 요소들
+    this.editNodeIdEl = document.getElementById('edit-node-id');
+    this.editNodeTitleEl = document.getElementById('edit-node-title');
+    this.editNodeDescEl = document.getElementById('edit-node-desc');
+    this.editNodeCategoryEl = document.getElementById('edit-node-category');
+    this.editNodeStatusEl = document.getElementById('edit-node-status');
+    this.editNodeTagsEl = document.getElementById('edit-node-tags');
+
+    // 사이드바 요소들
+    this.projectSidebarEl = document.getElementById('project-sidebar');
+    this.sidebarToggleTabEl = document.getElementById('sidebar-toggle-tab');
+    this.sidebarBoardsListEl = document.getElementById('sidebar-boards-list');
+    this.sidebarNodesListEl = document.getElementById('sidebar-nodes-list');
+    this.sidebarNodeCountEl = document.getElementById('sidebar-node-count');
+
     // 어딧노 AI 연동 모달
     this.aiChatModalEl = document.getElementById('ai-chat-modal');
     this.aiConnStatusEl = document.getElementById('ai-conn-status');
@@ -125,6 +140,7 @@ class ProjectMapApp {
       this.engine2D.setData(board.nodes, board.edges, board.viewport);
     }
     this.updateHud();
+    this.renderProjectSidebar();
   }
 
   initBridge() {
@@ -417,6 +433,221 @@ class ProjectMapApp {
     this.showToast('노드가 삭제되었습니다');
   }
 
+  // ✏️ 노드 편집 모달 열기 (태블릿 롱프레스 & 편집 버튼 클릭)
+  openNodeEditModalFor(nodeId) {
+    const currentBoard = this.drillDown.getCurrentBoard();
+    const node = currentBoard.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    this.editingNodeId = nodeId;
+    if (this.editNodeIdEl) this.editNodeIdEl.value = nodeId;
+    if (this.editNodeTitleEl) this.editNodeTitleEl.value = node.title || '';
+    if (this.editNodeDescEl) this.editNodeDescEl.value = node.description || '';
+    if (this.editNodeCategoryEl) this.editNodeCategoryEl.value = node.category || 'core';
+    if (this.editNodeStatusEl) this.editNodeStatusEl.value = node.status || 'planned';
+    if (this.editNodeTagsEl) this.editNodeTagsEl.value = Array.isArray(node.tags) ? node.tags.join(', ') : (node.tags || '');
+
+    if (this.nodeModalEl) {
+      this.nodeModalEl.classList.add('active');
+    }
+    if (this.editNodeTitleEl) {
+      setTimeout(() => this.editNodeTitleEl.focus(), 150);
+    }
+  }
+
+  closeNodeEditModal() {
+    this.editingNodeId = null;
+    if (this.nodeModalEl) {
+      this.nodeModalEl.classList.remove('active');
+    }
+  }
+
+  // 💾 노드 편집 내용 저장
+  saveNodeEdit() {
+    if (!this.editingNodeId) return;
+    const currentBoard = this.drillDown.getCurrentBoard();
+    const node = currentBoard.nodes.find(n => n.id === this.editingNodeId);
+    if (!node) return;
+
+    const newTitle = this.editNodeTitleEl ? this.editNodeTitleEl.value.trim() : node.title;
+    const newDesc = this.editNodeDescEl ? this.editNodeDescEl.value.trim() : node.description;
+    const newCategory = this.editNodeCategoryEl ? this.editNodeCategoryEl.value : node.category;
+    const newStatus = this.editNodeStatusEl ? this.editNodeStatusEl.value : node.status;
+    const newTagsStr = this.editNodeTagsEl ? this.editNodeTagsEl.value.trim() : '';
+
+    node.title = newTitle || '무제 노드';
+    node.description = newDesc;
+    
+    // 카테고리 변경 시 3D 층 높이(Z값) 자동 재배치
+    if (node.category !== newCategory && this.engine3D && this.engine3D.layers[newCategory]) {
+      node.category = newCategory;
+      node.z = this.engine3D.layers[newCategory].z;
+    } else {
+      node.category = newCategory;
+    }
+
+    node.status = newStatus;
+    node.tags = newTagsStr ? newTagsStr.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+    this.closeNodeEditModal();
+    this.syncActiveBoard();
+    this.triggerAutoSave();
+    this.showToast(`✨ [${node.title}] 노드가 수정되었습니다.`);
+  }
+
+  // 노드 개별 삭제
+  deleteNodeById(nodeId) {
+    const currentBoard = this.drillDown.getCurrentBoard();
+    const node = currentBoard.nodes.find(n => n.id === nodeId);
+    const nodeTitle = node ? node.title : '노드';
+
+    if (!confirm(`정말 [${nodeTitle}] 노드를 삭제하시겠습니까?`)) {
+      return;
+    }
+
+    currentBoard.nodes = currentBoard.nodes.filter(n => n.id !== nodeId);
+    currentBoard.edges = currentBoard.edges.filter(e => e.from !== nodeId && e.to !== nodeId);
+
+    if (this.engine3D && this.engine3D.selectedNodeId === nodeId) {
+      this.engine3D.selectedNodeId = null;
+    }
+    if (this.engine2D) {
+      this.engine2D.selectedNodeIds.delete(nodeId);
+    }
+
+    this.syncActiveBoard();
+    this.triggerAutoSave();
+    this.showToast(`🗑️ [${nodeTitle}] 노드가 삭제되었습니다.`);
+  }
+
+  // 모달 내부에서 현재 편집 노드 삭제
+  deleteCurrentEditingNode() {
+    if (!this.editingNodeId) return;
+    const targetId = this.editingNodeId;
+    this.closeNodeEditModal();
+    this.deleteNodeById(targetId);
+  }
+
+  // 📂 프로젝트 사이드바 열기 / 닫기
+  toggleProjectSidebar() {
+    if (!this.projectSidebarEl) return;
+    const isCollapsed = this.projectSidebarEl.classList.toggle('collapsed');
+    if (this.sidebarToggleTabEl) {
+      if (isCollapsed) {
+        this.sidebarToggleTabEl.innerHTML = '<span>📂 프로젝트 맵 목록</span><span class="tab-arrow">▶</span>';
+      } else {
+        this.sidebarToggleTabEl.innerHTML = '<span>📂 프로젝트 맵 목록</span><span class="tab-arrow">◀</span>';
+        this.renderProjectSidebar();
+      }
+    }
+  }
+
+  // 사이드바 목록 렌더링
+  renderProjectSidebar() {
+    if (!this.sidebarBoardsListEl || !this.sidebarNodesListEl) return;
+    const currentBoardId = this.drillDown.getCurrentBoardId();
+    const currentBoard = this.drillDown.getCurrentBoard();
+
+    // 1. 보드(계층) 목록 렌더링
+    const boards = this.projectData.boards || {};
+    let boardsHtml = '';
+    for (const [bid, b] of Object.entries(boards)) {
+      const isActive = bid === currentBoardId;
+      const isRoot = bid === 'root';
+      const icon = isRoot ? '🌐' : '📁';
+      const nodeCount = b.nodes ? b.nodes.length : 0;
+
+      boardsHtml += `
+        <div class="sidebar-item ${isActive ? 'active' : ''}" onclick="app.drillDown.navigateToBoard('${bid}')">
+          <div style="font-size: 16px;">${icon}</div>
+          <div class="sidebar-item-info">
+            <div class="sidebar-item-title">${this.escapeHtml(b.title || bid)}</div>
+            <div class="sidebar-item-meta">${nodeCount}개 노드 ${isRoot ? '(최상위 관제)' : '(서브 계층)'}</div>
+          </div>
+          ${isActive ? '<span style="color:#38bdf8; font-size:12px; font-weight:bold;">현재</span>' : ''}
+        </div>
+      `;
+    }
+    this.sidebarBoardsListEl.innerHTML = boardsHtml;
+
+    // 2. 현재 보드의 노드 목록 렌더링
+    const nodes = currentBoard.nodes || [];
+    if (this.sidebarNodeCountEl) {
+      this.sidebarNodeCountEl.textContent = `${nodes.length}개`;
+    }
+
+    if (nodes.length === 0) {
+      this.sidebarNodesListEl.innerHTML = '<div style="padding:16px; color:#64748b; font-size:12px; text-align:center;">등록된 노드가 없습니다.<br>상단 [+ 노드 추가] 버튼을 눌러보세요.</div>';
+      return;
+    }
+
+    let nodesHtml = '';
+    const categoryIcons = {
+      core: '⚡',
+      ai: '🤖',
+      backend: '⚙️',
+      frontend: '💻',
+      database: '💾'
+    };
+
+    nodes.forEach(node => {
+      const icon = categoryIcons[node.category] || '🧩';
+      const isSelected = (this.is3DMode && this.engine3D.selectedNodeId === node.id) ||
+                         (!this.is3DMode && this.engine2D.selectedNodeIds.has(node.id));
+
+      nodesHtml += `
+        <div class="sidebar-item ${isSelected ? 'active' : ''}" onclick="app.focusAndFlyToNode('${node.id}')">
+          <div style="font-size: 16px;">${icon}</div>
+          <div class="sidebar-item-info">
+            <div class="sidebar-item-title">${this.escapeHtml(node.title || '무제 노드')}</div>
+            <div class="sidebar-item-meta">
+              <span class="badge badge-${node.category}">${node.category}</span>
+              <span style="margin-left: 4px;">${this.escapeHtml(node.status || 'active')}</span>
+            </div>
+          </div>
+          <div class="sidebar-item-actions">
+            <button class="node-action-btn" title="수정" onclick="event.stopPropagation(); app.openNodeEditModalFor('${node.id}')">✏️</button>
+            <button class="node-action-btn delete" title="삭제" onclick="event.stopPropagation(); app.deleteNodeById('${node.id}')">🗑️</button>
+          </div>
+        </div>
+      `;
+    });
+    this.sidebarNodesListEl.innerHTML = nodesHtml;
+  }
+
+  escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // 노드 포커스 및 카메라 비행 착륙
+  focusAndFlyToNode(nodeId) {
+    const currentBoard = this.drillDown.getCurrentBoard();
+    const node = currentBoard.nodes.find(n => n.id === nodeId);
+    if (!node) return;
+
+    if (this.is3DMode) {
+      this.engine3D.selectedNodeId = nodeId;
+      this.engine3D.flyToNode(node);
+      this.showToast(`🎯 [${node.title}] 3D 비행 착륙`);
+    } else {
+      this.engine2D.selectedNodeIds.clear();
+      this.engine2D.selectedNodeIds.add(nodeId);
+      // 2D 화면 중앙으로 뷰포트 이동
+      this.engine2D.viewport.x = (this.canvas2DEl.width / (2 * (window.devicePixelRatio || 1))) - (node.x + node.width / 2) * this.engine2D.viewport.zoom;
+      this.engine2D.viewport.y = (this.canvas2DEl.height / (2 * (window.devicePixelRatio || 1))) - (node.y + node.height / 2) * this.engine2D.viewport.zoom;
+      this.engine2D.draw();
+      this.showToast(`🎯 [${node.title}] 포커스`);
+    }
+    this.renderProjectSidebar();
+    this.updateHud();
+  }
+
   openAiSpecModal() {
     const specMd = AiPromptExporter.generateSpec(this.projectData);
     this.aiSpecTextarea.value = specMd;
@@ -600,6 +831,7 @@ class ProjectMapApp {
       } else if (e.key === 'Escape') {
         this.closeAiSpecModal();
         this.closeTabletModal();
+        this.closeNodeEditModal();
       }
     });
   }

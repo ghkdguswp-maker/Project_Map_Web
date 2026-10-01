@@ -246,20 +246,62 @@ class Canvas3DEngine {
 
     el.innerHTML = `
       <div class="node-3d-header" style="background: ${this.getNodeHeaderGradient(node.category)}">
-        <div class="node-title">${node.title}</div>
-        <div class="node-layer-badge" style="border-color:${layerInfo.color}; color:${layerInfo.color}">${layerInfo.name}</div>
+        <div class="node-title" title="${node.title}">${node.title}</div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <div class="node-layer-badge" style="border-color:${layerInfo.color}; color:${layerInfo.color}">${layerInfo.name}</div>
+          <button class="node-action-btn edit-btn" title="노드 수정 (꾹 누르기 또는 터치)" onclick="event.stopPropagation(); window.app.openNodeEditModalFor('${node.id}');">✏️</button>
+          <button class="node-action-btn del-btn" title="노드 삭제" onclick="event.stopPropagation(); window.app.deleteNodeById('${node.id}');">🗑️</button>
+        </div>
       </div>
       <div class="node-3d-body">
         ${contentHtml}
       </div>
     `;
 
-    // 노드 클릭 / 더블클릭 이벤트 바인딩
+    // 롱 프레스 (Long Press - 450ms 꾹 누르기 감지)
+    let pressTimer = null;
+    let isLongPressTriggered = false;
+
+    const onTouchStart = (e) => {
+      isLongPressTriggered = false;
+      el.classList.add('pressing');
+      pressTimer = setTimeout(() => {
+        isLongPressTriggered = true;
+        el.classList.remove('pressing');
+        if (navigator.vibrate) navigator.vibrate(60);
+        this.selectNode(node.id);
+        window.app.openNodeEditModalFor(node.id);
+      }, 450);
+    };
+
+    const onTouchCancel = () => {
+      el.classList.remove('pressing');
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchCancel, { passive: true });
+    el.addEventListener('touchend', (e) => {
+      onTouchCancel();
+      if (!isLongPressTriggered) {
+        this.selectNode(node.id);
+        if (this.onNodeClick) this.onNodeClick(node);
+      }
+    });
+
+    // 마우스 이벤트 바인딩
     el.addEventListener('mousedown', (e) => {
       e.stopPropagation();
+      onTouchStart(e);
       this.selectNode(node.id);
       if (this.onNodeClick) this.onNodeClick(node);
     });
+
+    el.addEventListener('mousemove', onTouchCancel);
+    el.addEventListener('mouseup', onTouchCancel);
 
     el.addEventListener('dblclick', (e) => {
       e.stopPropagation();

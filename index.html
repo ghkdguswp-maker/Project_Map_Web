@@ -82,6 +82,45 @@
       </button>
     </nav>
 
+    <!-- 📂 접이식 프로젝트 & 보드 리스트 사이드바 토글 버튼 (화면 좌측) -->
+    <button id="sidebar-toggle-tab" onclick="app.toggleProjectSidebar()" title="프로젝트 보드 및 노드 리스트 열기/닫기">
+      <span class="tab-icon">📂</span> <span class="tab-text">프로젝트 맵 목록</span> <span id="sidebar-arrow-icon">▶</span>
+    </button>
+
+    <!-- 📂 접이식 프로젝트 & 보드 리스트 사이드바 드로어 -->
+    <aside id="project-sidebar" class="sidebar-drawer collapsed">
+      <div class="sidebar-header">
+        <div class="sidebar-title">
+          <span>📂 프로젝트 탐색기</span>
+        </div>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn btn-icon" style="padding: 4px 8px; font-size: 11px;" onclick="app.createSubBoardPrompt()" title="새 하위 보드 추가">＋</button>
+          <button class="btn btn-icon" style="padding: 4px 8px;" onclick="app.toggleProjectSidebar()" title="창 접기">◀</button>
+        </div>
+      </div>
+
+      <div class="sidebar-content">
+        <!-- 1. 보드(계층) 목록 -->
+        <div class="sidebar-section">
+          <div class="sidebar-section-title">📋 캔버스 보드 계층</div>
+          <div id="sidebar-boards-list" class="sidebar-list">
+            <!-- 동적 렌더링 -->
+          </div>
+        </div>
+
+        <!-- 2. 노드 퀵 리스트 -->
+        <div class="sidebar-section" style="flex: 1; display: flex; flex-direction: column;">
+          <div class="sidebar-section-title" style="display: flex; justify-content: space-between;">
+            <span>🧩 현재 보드 노드 목록</span>
+            <span id="sidebar-node-count" style="color: #38bdf8;">0개</span>
+          </div>
+          <div id="sidebar-nodes-list" class="sidebar-list" style="flex: 1; overflow-y: auto;">
+            <!-- 동적 렌더링: 클릭 시 해당 노드로 비행 착륙 -->
+          </div>
+        </div>
+      </div>
+    </aside>
+
     <!-- 2D 캔버스 영역 -->
     <div id="canvas-wrapper" style="display: none;">
       <canvas id="main-canvas"></canvas>
@@ -223,6 +262,63 @@
         </div>
         <div class="modal-footer">
           <button class="btn btn-primary" onclick="app.closeTabletModal()">확인</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ✏️ 노드 정보 수정 모달 (태블릿 롱프레스 / 수정 버튼 클릭 시 표시) -->
+    <div class="modal-overlay" id="node-edit-modal">
+      <div class="modal-box" style="max-width: 580px; width: 94%;">
+        <div class="modal-header">
+          <div class="modal-title">✏️ 노드 정보 수정</div>
+          <button class="btn btn-icon" onclick="app.closeNodeEditModal()">✕</button>
+        </div>
+        <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+          <input type="hidden" id="edit-node-id">
+          
+          <div>
+            <label class="form-label">노드 제목</label>
+            <input type="text" id="edit-node-title" class="form-input" placeholder="노드 제목을 입력하세요" style="font-size: 15px; font-weight: 600;">
+          </div>
+
+          <div>
+            <label class="form-label">노드 설명 및 상세 사양</label>
+            <textarea id="edit-node-desc" class="form-input" rows="4" style="resize: vertical; font-family: var(--font-sans); line-height: 1.5;" placeholder="노드의 상세 기능 및 사양을 입력하세요"></textarea>
+          </div>
+
+          <div style="display: flex; gap: 10px;">
+            <div style="flex: 1;">
+              <label class="form-label">계층 / 카테고리 (3D 층)</label>
+              <select id="edit-node-category" class="form-input">
+                <option value="core">⚡ 코어 사령탑 (Level 5)</option>
+                <option value="ai">🤖 AI 브레인 (Level 4)</option>
+                <option value="backend">⚙️ 백엔드 / 서버 (Level 3)</option>
+                <option value="frontend">💻 프론트 / 모바일 (Level 2)</option>
+                <option value="database">💾 데이터베이스 (Level 1)</option>
+              </select>
+            </div>
+            <div style="flex: 1;">
+              <label class="form-label">진행 상태</label>
+              <select id="edit-node-status" class="form-input">
+                <option value="active">🟢 완료 / 활성 (Active)</option>
+                <option value="in_progress">🟡 개발 진행중 (In Progress)</option>
+                <option value="planned">⚪ 계획됨 (Planned)</option>
+                <option value="alert">🔴 주의 / 점검 (Alert)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="form-label">태그 (쉼표로 구분)</label>
+            <input type="text" id="edit-node-tags" class="form-input" placeholder="예: system, api, core">
+          </div>
+        </div>
+        <div class="modal-footer" style="justify-content: space-between;">
+          <button class="btn btn-danger" onclick="app.deleteCurrentEditingNode()" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171;">🗑️ 노드 삭제</button>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn" onclick="app.closeNodeEditModal()">취소</button>
+            <button class="btn btn-primary" onclick="app.saveNodeEdit()">💾 저장 완료</button>
+          </div>
         </div>
       </div>
     </div>
