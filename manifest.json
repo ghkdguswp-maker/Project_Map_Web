@@ -1,16 +1,24 @@
 {
-  "name": "프로젝트 맵 (Project Map) 3D",
-  "short_name": "ProjectMap",
-  "start_url": "index.html",
+  "name": "프로젝트 맵 3D (Project Map)",
+  "short_name": "프로젝트맵",
+  "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#0a0d14",
   "theme_color": "#111827",
   "orientation": "any",
   "icons": [
     {
-      "src": "assets/icon.png",
+      "src": "assets/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
