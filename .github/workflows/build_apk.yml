@@ -176,9 +176,11 @@ jobs:
         ANDROID_HOME: /usr/local/lib/android/sdk
       run: |
         cd android_app
-        gradle wrapper --gradle-version 8.3
-        chmod +x gradlew
-        ./gradlew assembleDebug
+        # Download Gradle 8.2 directly to avoid Gradle 9 incompatibility
+        wget -q https://services.gradle.org/distributions/gradle-8.2-bin.zip
+        unzip -q gradle-8.2-bin.zip
+        export PATH=$PWD/gradle-8.2/bin:$PATH
+        gradle assembleDebug
 
     - name: Prepare APK Output
       run: |
