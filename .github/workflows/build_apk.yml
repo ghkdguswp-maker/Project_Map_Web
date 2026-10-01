@@ -1,0 +1,200 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v2
+
+    - name: Scaffold Android WebView App
+      run: |
+        mkdir -p android_app/app/src/main/java/com/eoditno/projectmap
+        mkdir -p android_app/app/src/main/res/values
+        mkdir -p android_app/app/src/main/res/mipmap-xxxhdpi
+
+        # Copy App Icon
+        cp assets/icon-512.png android_app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+
+        # settings.gradle
+        cat << 'EOF' > android_app/settings.gradle
+        pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        rootProject.name = "ProjectMap"
+        include ':app'
+        EOF
+
+        # root build.gradle
+        cat << 'EOF' > android_app/build.gradle
+        plugins {
+            id 'com.android.application' version '8.1.2' apply false
+        }
+        EOF
+
+        # app/build.gradle
+        cat << 'EOF' > android_app/app/build.gradle
+        plugins {
+            id 'com.android.application'
+        }
+
+        android {
+            namespace 'com.eoditno.projectmap'
+            compileSdk 34
+
+            defaultConfig {
+                applicationId "com.eoditno.projectmap"
+                minSdk 24
+                targetSdk 34
+                versionCode 1
+                versionName "1.0.0"
+            }
+
+            buildTypes {
+                release {
+                    minifyEnabled false
+                }
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
+        }
+
+        dependencies {
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+        }
+        EOF
+
+        # AndroidManifest.xml
+        cat << 'EOF' > android_app/app/src/main/AndroidManifest.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <uses-permission android:name="android.permission.INTERNET" />
+            <application
+                android:allowBackup="true"
+                android:icon="@mipmap/ic_launcher"
+                android:label="프로젝트 맵"
+                android:roundIcon="@mipmap/ic_launcher"
+                android:supportsRtl="true"
+                android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+                android:hardwareAccelerated="true">
+                <activity
+                    android:name=".MainActivity"
+                    android:exported="true"
+                    android:configChanges="orientation|screenSize|keyboardHidden">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
+        EOF
+
+        # MainActivity.java (Full-screen Hardware Accelerated WebView with OTA auto-refresh)
+        cat << 'EOF' > android_app/app/src/main/java/com/eoditno/projectmap/MainActivity.java
+        package com.eoditno.projectmap;
+
+        import android.app.Activity;
+        import android.os.Bundle;
+        import android.webkit.WebSettings;
+        import android.webkit.WebView;
+        import android.webkit.WebViewClient;
+        import android.view.Window;
+        import android.view.WindowManager;
+
+        public class MainActivity extends Activity {
+            private WebView webView;
+
+            @Override
+            protected void onCreate(Bundle savedInstanceState) {
+                super.onCreate(savedInstanceState);
+                requestWindowFeature(Window.FEATURE_NO_TITLE);
+                getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+
+                webView = new WebView(this);
+                setContentView(webView);
+
+                WebSettings s = webView.getSettings();
+                s.setJavaScriptEnabled(true);
+                s.setDomStorageEnabled(true);
+                s.setDatabaseEnabled(true);
+                s.setAllowFileAccess(true);
+                s.setAllowContentAccess(true);
+                s.setLoadWithOverviewMode(true);
+                s.setUseWideViewPort(true);
+                s.setBuiltInZoomControls(false);
+
+                webView.setWebViewClient(new WebViewClient());
+                webView.loadUrl("https://ghkdguswp-maker.github.io/Project_Map_Web/");
+            }
+
+            @Override
+            public void onBackPressed() {
+                if (webView.canGoBack()) {
+                    webView.goBack();
+                } else {
+                    super.onBackPressed();
+                }
+            }
+        }
+        EOF
+
+    - name: Build APK with Gradle
+      run: |
+        cd android_app
+        gradle wrapper --gradle-version 8.3
+        chmod +x gradlew
+        ./gradlew assembleDebug
+
+    - name: Prepare APK Output
+      run: |
+        cp android_app/app/build/outputs/apk/debug/app-debug.apk ProjectMap.apk
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ProjectMap-APK
+        path: ProjectMap.apk
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+      with:
+        tag_name: v1.0.0
+        name: "Project Map Tablet Standalone App v1.0.0"
+        body: |
+          ## 🚀 갤럭시 탭 / 안드로이드 전용 정식 APK 설치 파일
+          - **아이콘**: 3D 네온 사령탑 고해상도 앱 아이콘 탑재
+          - **자동 업데이트 (OTA)**: PC에서 코드 수정 후 푸시 시 태블릿 앱이 자동으로 최신 화면을 갱신합니다.
+          - **다운로드**: 아래 `ProjectMap.apk`를 태블릿에서 다운로드하여 설치하세요.
+        files: ProjectMap.apk
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
