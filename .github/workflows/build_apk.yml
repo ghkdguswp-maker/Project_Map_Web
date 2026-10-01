@@ -22,8 +22,9 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
+    - name: Accept Android SDK Licenses
+      run: |
+        yes | sdkmanager --licenses || true
 
     - name: Scaffold Android WebView App
       run: |
@@ -171,6 +172,8 @@ jobs:
         EOF
 
     - name: Build APK with Gradle
+      env:
+        ANDROID_HOME: /usr/local/lib/android/sdk
       run: |
         cd android_app
         gradle wrapper --gradle-version 8.3
