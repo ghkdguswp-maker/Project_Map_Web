@@ -22,7 +22,13 @@ class ProjectMapApp {
     this.backend = null;
     this.autoSaveTimeout = null;
     this.editingNode = null;
+    this.editingEdgeId = null;
     this.is3DMode = true; // 기본 3D 활성화
+    this.currentViewFilter = 'all'; // 'all' | 'plan' | 'arch'
+
+    // 🔗 노드 간 연결 생성 모드 상태
+    this.isConnectingMode = false;
+    this.connectingFromNodeId = null;
 
     this.initDOM();
     this.initEngines();
@@ -45,11 +51,25 @@ class ProjectMapApp {
     this.nodeCountEl = document.getElementById('hud-node-count');
     this.edgeCountEl = document.getElementById('hud-edge-count');
     this.saveStatusEl = document.getElementById('save-status-indicator');
+    this.btnRealtimeFlowEl = document.getElementById('btn-realtime-flow');
+
+    // 연결 모드 안내 플로팅 배너
+    this.connectingBannerEl = document.getElementById('connecting-banner');
+    this.connectingSourceNameEl = document.getElementById('connecting-source-name');
 
     // 모달
     this.aiModalEl = document.getElementById('ai-spec-modal');
     this.nodeModalEl = document.getElementById('node-edit-modal');
     this.aiSpecTextarea = document.getElementById('ai-spec-content');
+
+    // 엣지 정보 수정 모달 요소들
+    this.edgeModalEl = document.getElementById('edge-edit-modal');
+    this.editEdgeIdEl = document.getElementById('edit-edge-id');
+    this.editEdgeFromNameEl = document.getElementById('edit-edge-from-name');
+    this.editEdgeToNameEl = document.getElementById('edit-edge-to-name');
+    this.editEdgeLabelEl = document.getElementById('edit-edge-label');
+    this.editEdgeStyleEl = document.getElementById('edit-edge-style');
+    this.editEdgeColorEl = document.getElementById('edit-edge-color');
 
     // 노드 수정 모달 요소들
     this.editNodeIdEl = document.getElementById('edit-node-id');
@@ -362,7 +382,29 @@ class ProjectMapApp {
     let height = 180;
     let data = {};
 
-    if (type === 'checklist') {
+    // 📋 1. 기획 & 플래닝 노드군
+    if (type === 'goal') {
+      category = 'goal';
+      title = '🎯 2026 핵심 비전 & 마일스톤';
+      height = 190;
+      data = { target_date: '2026-12-31', importance: 'HIGH' };
+    } else if (type === 'idea') {
+      category = 'idea';
+      title = '💡 창의적 아이디어 발상 노트';
+      height = 180;
+      data = { note: '혁신 비즈니스 모델 및 사용자 편의성 극대화 방안' };
+    } else if (type === 'strategy') {
+      category = 'strategy';
+      title = '📝 단계별 추진 전략 & 로드맵';
+      height = 200;
+      data = { phase: 'Phase 1: 기획 및 검증' };
+    } else if (type === 'task') {
+      category = 'task';
+      title = '📌 우선 추진 할일 (Action Item)';
+      height = 170;
+      data = { priority: '상' };
+    // ⚙️ 2. 시스템 & 엔지니어링 노드군
+    } else if (type === 'checklist') {
       category = 'backend';
       title = '📋 개발 체크리스트';
       height = 220;
@@ -431,6 +473,235 @@ class ProjectMapApp {
     this.syncActiveBoard();
     this.triggerAutoSave();
     this.showToast('노드가 삭제되었습니다');
+  }
+
+  // ========================================================
+  // 🔗 노드 간 연결 생성 파이프라인 (Connect Mode)
+  // ========================================================
+  startConnectingPrompt() {
+    const currentBoard = this.drillDown.getCurrentBoard();
+    const targetId = this.is3DMode ? this.engine3D.selectedNodeId : Array.from(this.engine2D.selectedNodeIds)[0];
+    if (targetId) {
+      this.startConnecting(targetId);
+    } else {
+      if (currentBoard.nodes.length === 0) {
+        this.showToast('연결할 노드가 없습니다. 먼저 노드를 생성하세요.');
+        return;
+      }
+      this.showToast('🔗 먼저 연결을 시작할 노드를 터치/선택하세요.');
+    }
+  }
+
+  startConnecting(fromNodeId) {
+    const currentBoard = this.drillDown.getCurrentBoard();
+    const fromNode = currentBoard.nodes.find(n => n.id === fromNodeId);
+    if (!fromNode) return;
+
+    this.isConnectingMode = true;
+    this.connectingFromNodeId = fromNodeId;
+
+    // 시각 피드백: 출발 노드 강조
+    document.querySelectorAll('.node-3d-card').forEach(el => el.classList.remove('connecting-source'));
+    const sourceEl = document.getElementById(`node-3d-${fromNodeId}`);
+    if (sourceEl) sourceEl.classList.add('connecting-source');
+
+    // 플로팅 안내 배너 표시
+    if (this.connectingBannerEl) {
+      if (this.connectingSourceNameEl) this.connectingSourceNameEl.textContent = fromNode.title || '출발 노드';
+      this.connectingBannerEl.classList.add('show');
+    }
+
+    this.showToast(`🔗 [${fromNode.title}] ➔ 연결할 대상 노드를 터치하세요`);
+  }
+
+  completeConnecting(toNodeId) {
+    if (!this.isConnectingMode || !this.connectingFromNodeId) return;
+
+    if (this.connectingFromNodeId === toNodeId) {
+      this.showToast('자기 자신과는 연결할 수 없습니다.');
+      return;
+    }
+
+    const currentBoard = this.drillDown.getCurrentBoard();
+    const fromNode = currentBoard.nodes.find(n => n.id === this.connectingFromNodeId);
+    const toNode = currentBoard.nodes.find(n => n.id === toNodeId);
+    if (!fromNode || !toNode) {
+      this.cancelConnecting();
+      return;
+    }
+
+    // 중복 연결 검사
+    const existingEdge = currentBoard.edges.find(e => 
+      (e.from === fromNode.id && e.to === toNode.id) ||
+      (e.from === toNode.id && e.to === fromNode.id)
+    );
+
+    if (existingEdge) {
+      this.showToast('이미 두 노드 사이에 연결 라인이 존재합니다.');
+      this.cancelConnecting();
+      this.openEdgeEditModalFor(existingEdge.id);
+      return;
+    }
+
+    // 새 엣지 생성
+    const newEdgeId = `edge_${Date.now()}`;
+    const newEdge = {
+      id: newEdgeId,
+      from: fromNode.id,
+      to: toNode.id,
+      label: '신규 파이프라인',
+      style: 'solid',
+      color: '#38bdf8'
+    };
+
+    currentBoard.edges.push(newEdge);
+
+    this.cancelConnecting();
+    this.syncActiveBoard();
+    this.triggerAutoSave();
+    this.showToast(`✨ [${fromNode.title}] ➔ [${toNode.title}] 연결 완료!`);
+
+    // 즉시 설명/라벨을 편집할 수 있도록 모달 오픈
+    setTimeout(() => {
+      this.openEdgeEditModalFor(newEdgeId);
+    }, 250);
+  }
+
+  cancelConnecting() {
+    this.isConnectingMode = false;
+    this.connectingFromNodeId = null;
+    document.querySelectorAll('.node-3d-card').forEach(el => el.classList.remove('connecting-source'));
+    if (this.connectingBannerEl) {
+      this.connectingBannerEl.classList.remove('show');
+    }
+  }
+
+  // ========================================================
+  // 🔗 엣지(연결선) 정보 및 설명 수정 모달
+  // ========================================================
+  openEdgeEditModalFor(edgeId) {
+    const currentBoard = this.drillDown.getCurrentBoard();
+    const edge = currentBoard.edges.find(e => e.id === edgeId);
+    if (!edge) return;
+
+    const fromNode = currentBoard.nodes.find(n => n.id === edge.from);
+    const toNode = currentBoard.nodes.find(n => n.id === edge.to);
+
+    this.editingEdgeId = edgeId;
+    if (this.editEdgeIdEl) this.editEdgeIdEl.value = edgeId;
+    if (this.editEdgeFromNameEl) this.editEdgeFromNameEl.textContent = fromNode ? fromNode.title : edge.from;
+    if (this.editEdgeToNameEl) this.editEdgeToNameEl.textContent = toNode ? toNode.title : edge.to;
+    if (this.editEdgeLabelEl) this.editEdgeLabelEl.value = edge.label || '';
+    if (this.editEdgeStyleEl) this.editEdgeStyleEl.value = edge.style || 'solid';
+    if (this.editEdgeColorEl) this.editEdgeColorEl.value = edge.color || '#38bdf8';
+
+    if (this.edgeModalEl) {
+      this.edgeModalEl.classList.add('active');
+    }
+    if (this.editEdgeLabelEl) {
+      setTimeout(() => this.editEdgeLabelEl.focus(), 150);
+    }
+  }
+
+  closeEdgeEditModal() {
+    this.editingEdgeId = null;
+    if (this.edgeModalEl) {
+      this.edgeModalEl.classList.remove('active');
+    }
+  }
+
+  saveEdgeEdit() {
+    if (!this.editingEdgeId) return;
+    const currentBoard = this.drillDown.getCurrentBoard();
+    const edge = currentBoard.edges.find(e => e.id === this.editingEdgeId);
+    if (!edge) return;
+
+    edge.label = this.editEdgeLabelEl ? this.editEdgeLabelEl.value.trim() : edge.label;
+    edge.style = this.editEdgeStyleEl ? this.editEdgeStyleEl.value : edge.style;
+    edge.color = this.editEdgeColorEl ? this.editEdgeColorEl.value : edge.color;
+
+    this.closeEdgeEditModal();
+    this.syncActiveBoard();
+    this.triggerAutoSave();
+    this.showToast('✅ 연결 라인 설명이 저장되었습니다.');
+  }
+
+  deleteCurrentEditingEdge() {
+    if (!this.editingEdgeId) return;
+    const targetId = this.editingEdgeId;
+    this.closeEdgeEditModal();
+    this.deleteEdgeById(targetId);
+  }
+
+  deleteEdgeById(edgeId) {
+    const currentBoard = this.drillDown.getCurrentBoard();
+    currentBoard.edges = currentBoard.edges.filter(e => e.id !== edgeId);
+    this.syncActiveBoard();
+    this.triggerAutoSave();
+    this.showToast('🗑️ 연결선이 삭제되었습니다.');
+  }
+
+  // ========================================================
+  // 🌐 뷰 모드 필터 (PLAN / ARCH / ALL)
+  // ========================================================
+  setViewFilter(filter) {
+    this.currentViewFilter = filter;
+    ['btn-view-all', 'btn-view-plan', 'btn-view-arch'].forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) btn.classList.remove('active');
+    });
+
+    const activeBtn = document.getElementById(`btn-view-${filter}`);
+    if (activeBtn) activeBtn.classList.add('active');
+
+    const planningCats = new Set(['goal', 'idea', 'strategy', 'task']);
+
+    // 3D 노드 DOM 필터링 표시
+    document.querySelectorAll('.node-3d-card').forEach(el => {
+      const id = el.id.replace('node-3d-', '');
+      const currentBoard = this.drillDown.getCurrentBoard();
+      const node = currentBoard.nodes.find(n => n.id === id);
+      if (!node) return;
+
+      const isPlan = planningCats.has(node.category);
+      if (filter === 'plan') {
+        el.style.opacity = isPlan ? '1' : '0.15';
+        el.style.pointerEvents = isPlan ? 'auto' : 'none';
+      } else if (filter === 'arch') {
+        el.style.opacity = !isPlan ? '1' : '0.15';
+        el.style.pointerEvents = !isPlan ? 'auto' : 'none';
+      } else {
+        el.style.opacity = '1';
+        el.style.pointerEvents = 'auto';
+      }
+    });
+
+    const filterNames = { all: '🌐 전체 종합 뷰', plan: '📋 기획 & 플래닝 뷰', arch: '⚙️ 시스템 & AI 뷰' };
+    this.showToast(filterNames[filter] || '뷰 전환');
+  }
+
+  // ========================================================
+  // ⚡ 실시간 데이터 플로우 시뮬레이션 토글
+  // ========================================================
+  toggleRealtimeSimulation() {
+    if (this.engine3D) {
+      this.engine3D.realtimeSimulationActive = !this.engine3D.realtimeSimulationActive;
+      const isActive = this.engine3D.realtimeSimulationActive;
+      if (this.btnRealtimeFlowEl) {
+        if (isActive) {
+          this.btnRealtimeFlowEl.innerHTML = '⏸️ 플로우 일시정지';
+          this.btnRealtimeFlowEl.style.background = 'rgba(16, 185, 129, 0.2)';
+          this.btnRealtimeFlowEl.style.borderColor = '#10b981';
+          this.btnRealtimeFlowEl.style.color = '#34d399';
+        } else {
+          this.btnRealtimeFlowEl.innerHTML = '▶️ 실시간 플로우';
+          this.btnRealtimeFlowEl.style.background = 'rgba(6, 182, 212, 0.15)';
+          this.btnRealtimeFlowEl.style.borderColor = '#06b6d4';
+          this.btnRealtimeFlowEl.style.color = '#67e8f9';
+        }
+      }
+      this.showToast(isActive ? '⚡ 실시간 데이터 플로우 활성화' : '⏸️ 데이터 플로우 일시정지');
+    }
   }
 
   // ✏️ 노드 편집 모달 열기 (태블릿 롱프레스 & 편집 버튼 클릭)
@@ -583,11 +854,16 @@ class ProjectMapApp {
 
     let nodesHtml = '';
     const categoryIcons = {
+      goal: '🎯',
+      idea: '💡',
+      strategy: '📝',
+      task: '📌',
       core: '⚡',
       ai: '🤖',
       backend: '⚙️',
       frontend: '💻',
-      database: '💾'
+      database: '💾',
+      finance: '📈'
     };
 
     nodes.forEach(node => {
@@ -606,6 +882,7 @@ class ProjectMapApp {
             </div>
           </div>
           <div class="sidebar-item-actions">
+            <button class="node-action-btn" title="연결선 만들기" onclick="event.stopPropagation(); app.startConnecting('${node.id}')">🔗</button>
             <button class="node-action-btn" title="수정" onclick="event.stopPropagation(); app.openNodeEditModalFor('${node.id}')">✏️</button>
             <button class="node-action-btn delete" title="삭제" onclick="event.stopPropagation(); app.deleteNodeById('${node.id}')">🗑️</button>
           </div>
@@ -706,7 +983,9 @@ class ProjectMapApp {
 
   sendAiQuickPrompt(type) {
     let prompt = "";
-    if (type === 'analyze_all') {
+    if (type === 'plan_to_arch') {
+      prompt = "현재 캔버스에 마스터가 수립한 [기획 & 플래닝 노드(목표, 아이디어, 전략, 태스크)]를 정밀 분석하여, 이를 실체화하기 위한 소프트웨어 시스템 아키텍처(필요한 백엔드 API, AI 오케스트레이션 모듈, DB 스키마, 파이프라인 연결선)를 구체적으로 설계하고 신규 노드 명세를 도출해줘.";
+    } else if (type === 'analyze_all') {
       prompt = "프로젝트 맵의 전체 컴포넌트 구조 및 5대 핵심 노드의 상태를 분석하고 요약 브리핑해줘.";
     } else if (type === 'check_progress') {
       prompt = "프로젝트 맵의 체크리스트 항목 현황을 점검하고 미완료 항목과 우선순위를 알려줘.";
@@ -832,6 +1111,8 @@ class ProjectMapApp {
         this.closeAiSpecModal();
         this.closeTabletModal();
         this.closeNodeEditModal();
+        this.closeEdgeEditModal();
+        this.cancelConnecting();
       }
     });
   }

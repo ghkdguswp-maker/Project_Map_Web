@@ -263,6 +263,11 @@ class CanvasEngine {
 
         const hitNode = this.hitTestNode(worldPos.x, worldPos.y);
         if (hitNode) {
+          if (window.app && window.app.isConnectingMode) {
+            window.app.completeConnecting(hitNode.id);
+            return;
+          }
+
           this.selectedNodeIds.clear();
           this.selectedNodeIds.add(hitNode.id);
           this.isDraggingNode = true;
@@ -397,6 +402,11 @@ class CanvasEngine {
         // O(1) 노드 히트테스트 (Spatial Hash Grid)
         const hitNode = this.hitTestNode(worldPos.x, worldPos.y);
         if (hitNode) {
+          if (window.app && window.app.isConnectingMode) {
+            window.app.completeConnecting(hitNode.id);
+            return;
+          }
+
           if (!e.shiftKey && !this.selectedNodeIds.has(hitNode.id)) {
             this.selectedNodeIds.clear();
           }
@@ -486,6 +496,12 @@ class CanvasEngine {
 
       if (hitNode && this.onNodeDoubleClick) {
         this.onNodeDoubleClick(hitNode);
+        return;
+      }
+
+      const hitEdge = this.hitTestEdge(worldPos.x, worldPos.y);
+      if (hitEdge && window.app) {
+        window.app.openEdgeEditModalFor(hitEdge.id);
       }
     });
 
@@ -533,6 +549,26 @@ class CanvasEngine {
       const portY = n.y + n.height / 2;
       if (Math.hypot(wx - portX, wy - portY) <= 16) {
         return n;
+      }
+    }
+    return null;
+  }
+
+  hitTestEdge(wx, wy) {
+    for (let i = this.edges.length - 1; i >= 0; i--) {
+      const edge = this.edges[i];
+      const fromNode = this.nodeMap.get(edge.from);
+      const toNode = this.nodeMap.get(edge.to);
+      if (!fromNode || !toNode) continue;
+
+      const p1 = { x: fromNode.x + fromNode.width, y: fromNode.y + fromNode.height / 2 };
+      const p2 = { x: toNode.x, y: toNode.y + toNode.height / 2 };
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
+
+      const dist = Math.hypot(wx - midX, wy - midY);
+      if (dist <= 30) {
+        return edge;
       }
     }
     return null;

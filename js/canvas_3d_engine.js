@@ -25,15 +25,25 @@ class Canvas3DEngine {
 
     // 레이어 정의 (Z축)
     this.layers = {
-      'ai': { z: 450, name: 'AI 오케스트레이션 층', color: '#a855f7' },
-      'core': { z: 150, name: '런처 & 데스크톱 층', color: '#38bdf8' },
-      'backend': { z: -150, name: '백엔드 & 검색 엔진 층', color: '#10b981' },
-      'database': { z: -450, name: '데이터베이스 & 인프라 층', color: '#f59e0b' },
-      'finance': { z: -150, name: '트레이딩 엔진 층', color: '#eab308' }
+      // 📋 기획 & 플래닝 레이어 (최상위 사령탑 상단)
+      'goal': { z: 750, name: '🎯 핵심 목표 / 마일스톤', color: '#f59e0b' },
+      'idea': { z: 600, name: '💡 아이디어 / 기획 노트', color: '#10b981' },
+      'strategy': { z: 450, name: '📝 실행 전략 / 로드맵', color: '#6366f1' },
+      'task': { z: 300, name: '📌 단순 할일 / 태스크', color: '#0ea5e9' },
+      // ⚙️ 시스템 & 아키텍처 레이어
+      'core': { z: 150, name: '⚡ 코어 사령탑 / 런처', color: '#38bdf8' },
+      'ai': { z: 0, name: '🤖 AI 에이전트 브레인', color: '#a855f7' },
+      'backend': { z: -200, name: '⚙️ 백엔드 & API 파이프라인', color: '#10b981' },
+      'frontend': { z: -100, name: '💻 프론트엔드 & UI', color: '#38bdf8' },
+      'database': { z: -450, name: '💾 데이터베이스 & 영속성', color: '#eab308' },
+      'finance': { z: -200, name: '📈 트레이딩 & 금융', color: '#f59e0b' }
     };
 
     this.selectedNodeId = null;
     this.animatingCamera = false;
+    this.realtimeSimulationActive = true;
+    this.edgeParticles = [];
+    this.edgeLabels = [];
 
     // 콜백들
     this.onNodeClick = null;
@@ -244,11 +254,22 @@ class Canvas3DEngine {
       }
     }
 
+    const isRunning = node.status === 'running';
+    el.className = `node-3d-card ${isRunning ? 'status-running' : ''}`;
+
+    const runningBadgeHtml = isRunning 
+      ? '<span class="status-badge-running"><span class="spinner-mini"></span> RUNNING</span>' 
+      : '';
+
     el.innerHTML = `
       <div class="node-3d-header" style="background: ${this.getNodeHeaderGradient(node.category)}">
-        <div class="node-title" title="${node.title}">${node.title}</div>
-        <div style="display: flex; align-items: center; gap: 6px;">
+        <div style="display: flex; align-items: center; gap: 6px; overflow: hidden;">
+          <div class="node-title" title="${node.title}">${node.title}</div>
+          ${runningBadgeHtml}
+        </div>
+        <div style="display: flex; align-items: center; gap: 5px;">
           <div class="node-layer-badge" style="border-color:${layerInfo.color}; color:${layerInfo.color}">${layerInfo.name}</div>
+          <button class="node-action-btn connect-btn" title="다른 노드와 연결선 만들기" onclick="event.stopPropagation(); window.app.startConnecting('${node.id}');">🔗</button>
           <button class="node-action-btn edit-btn" title="노드 수정 (꾹 누르기 또는 터치)" onclick="event.stopPropagation(); window.app.openNodeEditModalFor('${node.id}');">✏️</button>
           <button class="node-action-btn del-btn" title="노드 삭제" onclick="event.stopPropagation(); window.app.deleteNodeById('${node.id}');">🗑️</button>
         </div>
@@ -263,6 +284,12 @@ class Canvas3DEngine {
     let isLongPressTriggered = false;
 
     const onTouchStart = (e) => {
+      // 연결 모드 중이면 타겟 노드로 지정하여 즉시 연결
+      if (window.app && window.app.isConnectingMode) {
+        window.app.completeConnecting(node.id);
+        return;
+      }
+
       isLongPressTriggered = false;
       el.classList.add('pressing');
       pressTimer = setTimeout(() => {
@@ -287,6 +314,7 @@ class Canvas3DEngine {
     el.addEventListener('touchend', (e) => {
       onTouchCancel();
       if (!isLongPressTriggered) {
+        if (window.app && window.app.isConnectingMode) return;
         this.selectNode(node.id);
         if (this.onNodeClick) this.onNodeClick(node);
       }
@@ -295,6 +323,10 @@ class Canvas3DEngine {
     // 마우스 이벤트 바인딩
     el.addEventListener('mousedown', (e) => {
       e.stopPropagation();
+      if (window.app && window.app.isConnectingMode) {
+        window.app.completeConnecting(node.id);
+        return;
+      }
       onTouchStart(e);
       this.selectNode(node.id);
       if (this.onNodeClick) this.onNodeClick(node);
@@ -314,6 +346,10 @@ class Canvas3DEngine {
 
   getNodeHeaderGradient(cat) {
     switch (cat) {
+      case 'goal': return 'linear-gradient(90deg, #92400e, #d97706)';
+      case 'idea': return 'linear-gradient(90deg, #065f46, #059669)';
+      case 'strategy': return 'linear-gradient(90deg, #3730a3, #4f46e5)';
+      case 'task': return 'linear-gradient(90deg, #075985, #0284c7)';
       case 'ai': return 'linear-gradient(90deg, #4c1d95, #6b21a8)';
       case 'core': return 'linear-gradient(90deg, #1e3a5f, #1e40af)';
       case 'backend': return 'linear-gradient(90deg, #064e3b, #047857)';
@@ -323,8 +359,9 @@ class Canvas3DEngine {
     }
   }
 
-  // 3D 네온 튜브 연결선 (3D Curved Pipeline) 구축
+  // 3D 네온 튜브 연결선 (3D Curved Pipeline) & 라벨 & 실시간 파티클 구축
   build3DEdges() {
+    // 1. 기존 지오메트리 & 메시 정리
     while (this.edgeGroup.children.length > 0) {
       const child = this.edgeGroup.children[0];
       if (child.geometry) child.geometry.dispose();
@@ -332,7 +369,16 @@ class Canvas3DEngine {
       this.edgeGroup.remove(child);
     }
 
-    this.edges.forEach(edge => {
+    // 2. 기존 CSS3D 엣지 라벨 제거
+    if (this.edgeLabels) {
+      this.edgeLabels.forEach(obj => this.scene.remove(obj));
+    }
+    this.edgeLabels = [];
+    this.edgeParticles = [];
+
+    const particleGeo = new THREE.SphereGeometry(3.6, 8, 8);
+
+    this.edges.forEach((edge, edgeIdx) => {
       const fromNode = this.nodeMap.get(edge.from);
       const toNode = this.nodeMap.get(edge.to);
       if (!fromNode || !toNode) return;
@@ -342,22 +388,59 @@ class Canvas3DEngine {
 
       // 3D 베지어 곡선 생성
       const midPoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
-      // Z축 차이가 있을 경우 입체 아치 형성
       const zDiff = Math.abs(p2.z - p1.z);
-      midPoint.z += Math.max(zDiff * 0.3, 100);
+      midPoint.z += Math.max(zDiff * 0.35, 120);
 
       const curve = new THREE.QuadraticBezierCurve3(p1, midPoint, p2);
-      const tubeGeo = new THREE.TubeGeometry(curve, 32, 2.8, 8, false);
+      const tubeRadius = edge.style === 'solid' ? 2.8 : 2.0;
+      const tubeGeo = new THREE.TubeGeometry(curve, 36, tubeRadius, 8, false);
+      
+      const edgeColorHex = edge.color ? parseInt(edge.color.replace('#', '0x')) : 0x38bdf8;
       const tubeMat = new THREE.MeshStandardMaterial({
-        color: edge.color || 0x38bdf8,
-        emissive: edge.color || 0x38bdf8,
-        emissiveIntensity: 0.6,
+        color: edgeColorHex,
+        emissive: edgeColorHex,
+        emissiveIntensity: 0.65,
         roughness: 0.2,
-        metalness: 0.8
+        metalness: 0.8,
+        wireframe: edge.style === 'dashed'
       });
 
       const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
       this.edgeGroup.add(tubeMesh);
+
+      // 3. 3D 네온 라벨 배지 생성 (곡선 중간점)
+      const labelText = edge.label || '파이프라인 연결';
+      const labelEl = document.createElement('div');
+      labelEl.className = 'edge-3d-badge';
+      labelEl.innerHTML = `<span class="edge-icon">⚡</span><span>${labelText}</span>`;
+      labelEl.title = `클릭 시 연결 정보 및 라벨 수정 (${labelText})`;
+      labelEl.onclick = (e) => {
+        e.stopPropagation();
+        if (window.app) window.app.openEdgeEditModalFor(edge.id);
+      };
+
+      const labelObj = new THREE.CSS3DObject(labelEl);
+      const labelPos = curve.getPointAt(0.5);
+      labelObj.position.copy(labelPos);
+      labelObj.position.z += 28; // 튜브 바로 위에 배치
+      this.scene.add(labelObj);
+      this.edgeLabels.push(labelObj);
+
+      // 4. 실시간 데이터 플로우 파티클 생성 (2개의 빛나는 광자 볼)
+      for (let i = 0; i < 2; i++) {
+        const pMat = new THREE.MeshBasicMaterial({
+          color: 0xffffff
+        });
+        const pMesh = new THREE.Mesh(particleGeo, pMat);
+        this.edgeGroup.add(pMesh);
+
+        this.edgeParticles.push({
+          mesh: pMesh,
+          curve: curve,
+          speed: 0.18 + (edgeIdx % 3) * 0.05,
+          offset: i * 0.5
+        });
+      }
     });
   }
 
@@ -518,6 +601,17 @@ class Canvas3DEngine {
     // 별빛 회전
     if (this.stars) {
       this.stars.rotation.z += 0.0003;
+    }
+
+    // ⚡ 실시간 데이터 플로우 파티클 애니메이션
+    if (this.realtimeSimulationActive && this.edgeParticles && this.edgeParticles.length > 0) {
+      const now = Date.now() * 0.001;
+      for (let i = 0; i < this.edgeParticles.length; i++) {
+        const p = this.edgeParticles[i];
+        const t = (now * p.speed + p.offset) % 1;
+        const pos = p.curve.getPointAt(t);
+        p.mesh.position.copy(pos);
+      }
     }
 
     this.webglRenderer.render(this.scene, this.camera);
