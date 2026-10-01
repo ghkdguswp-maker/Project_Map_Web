@@ -1,0 +1,272 @@
+{
+  "version": "1.0.0",
+  "project_name": "어딧노(Eoditno) 통합 사령탑 시스템",
+  "last_updated": "2026-10-01T20:47:56.299619",
+  "active_board_id": "root",
+  "boards": {
+    "root": {
+      "id": "root",
+      "title": "어딧노 종합 관제 맵",
+      "viewport": {
+        "x": 676.697247706422,
+        "y": 421.1467889908257,
+        "zoom": 0.85,
+        "minZoom": 0.05,
+        "maxZoom": 5
+      },
+      "nodes": [
+        {
+          "id": "node_master_launcher",
+          "type": "standard",
+          "title": "🖥️ 어딧노 통합 런처 (Master Launcher)",
+          "description": "시스템 전체 원클릭 기동 및 모니터링 데스크톱 허브",
+          "category": "core",
+          "status": "active",
+          "tags": [
+            "desktop",
+            "launcher",
+            "gui"
+          ],
+          "x": 100,
+          "y": 150,
+          "width": 320,
+          "height": 180,
+          "sub_board_id": "board_launcher",
+          "data": {
+            "tech_stack": "PySide6, WebEngine, Python",
+            "priority": "HIGH"
+          }
+        },
+        {
+          "id": "node_root_ai",
+          "type": "markdown",
+          "title": "🧠 루트 AI 비서 (EDN Root Assistant)",
+          "description": "생태계 전반을 오케스트레이션하는 마스터 AI 에이전트",
+          "category": "ai",
+          "status": "in_progress",
+          "tags": [
+            "agent",
+            "llm",
+            "automation"
+          ],
+          "x": 560,
+          "y": 80,
+          "width": 360,
+          "height": 240,
+          "sub_board_id": null,
+          "data": {
+            "content": "### 📌 주요 미션\n- 하위 에이전트 작업 분배\n- 데스크톱 제어 및 긴급 알림 수신\n- Dify 및 로컬 Ollama 모델 전환 관장\n\n```python\n# edn_ai_root_assistant.py\nrun_coordinator_loop()\n```"
+          }
+        },
+        {
+          "id": "node_naemulgeon",
+          "type": "checklist",
+          "title": "📦 내물건 / 내템어딧노 P2P 검색 엔진",
+          "description": "실시간 시세 크롤러 및 P2P 거래 매칭 백엔드",
+          "category": "backend",
+          "status": "active",
+          "tags": [
+            "search",
+            "p2p",
+            "crawling"
+          ],
+          "x": 560,
+          "y": 380,
+          "width": 340,
+          "height": 230,
+          "sub_board_id": null,
+          "data": {
+            "items": [
+              {
+                "id": "chk_1",
+                "text": "실시간 당근/번개장터 시세 크롤러",
+                "done": true
+              },
+              {
+                "id": "chk_2",
+                "text": "아이템베이/매니아 거래 데이터 연동",
+                "done": true
+              },
+              {
+                "id": "chk_3",
+                "text": "자동 가격 알림 텔레그램 봇 연계",
+                "done": false
+              },
+              {
+                "id": "chk_4",
+                "text": "P2P 직거래 보안 에스크로 프로토타입",
+                "done": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "node_db_schema",
+          "type": "db_schema",
+          "title": "💾 eoditno.db 핵심 스키마",
+          "description": "사용자 및 시스템 상태 저장 SQLite 데이터베이스",
+          "category": "database",
+          "status": "active",
+          "tags": [
+            "sqlite",
+            "database",
+            "schema"
+          ],
+          "x": 1020,
+          "y": 180,
+          "width": 340,
+          "height": 260,
+          "sub_board_id": null,
+          "data": {
+            "table_name": "system_state_and_nodes",
+            "columns": [
+              {
+                "name": "id",
+                "type": "INTEGER PRIMARY KEY"
+              },
+              {
+                "name": "service_name",
+                "type": "TEXT NOT NULL"
+              },
+              {
+                "name": "health_status",
+                "type": "TEXT"
+              },
+              {
+                "name": "last_heartbeat",
+                "type": "DATETIME"
+              },
+              {
+                "name": "meta_json",
+                "type": "JSON"
+              }
+            ]
+          }
+        },
+        {
+          "id": "node_coin_trader",
+          "type": "standard",
+          "title": "🪙 Coin Integration Trader",
+          "description": "실시간 코인 시세 감시 및 전략 자동 매매 봇",
+          "category": "finance",
+          "status": "planned",
+          "tags": [
+            "crypto",
+            "trading",
+            "quant"
+          ],
+          "x": 100,
+          "y": 420,
+          "width": 320,
+          "height": 170,
+          "sub_board_id": null,
+          "data": {
+            "tech_stack": "Python, CCXT, Upbit/Bithumb API",
+            "priority": "MEDIUM"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge_launcher_ai",
+          "from": "node_master_launcher",
+          "to": "node_root_ai",
+          "label": "명령 및 상태 관제",
+          "style": "solid",
+          "color": "#38bdf8"
+        },
+        {
+          "id": "edge_launcher_naemulgeon",
+          "from": "node_master_launcher",
+          "to": "node_naemulgeon",
+          "label": "서비스 데몬 기동",
+          "style": "solid",
+          "color": "#38bdf8"
+        },
+        {
+          "id": "edge_ai_db",
+          "from": "node_root_ai",
+          "to": "node_db_schema",
+          "label": "세션 및 로그 기록",
+          "style": "dashed",
+          "color": "#a855f7"
+        },
+        {
+          "id": "edge_naemulgeon_db",
+          "from": "node_naemulgeon",
+          "to": "node_db_schema",
+          "label": "시세 데이터 저장",
+          "style": "solid",
+          "color": "#10b981"
+        },
+        {
+          "id": "edge_launcher_trader",
+          "from": "node_master_launcher",
+          "to": "node_coin_trader",
+          "label": "트레이더 백그라운드 구동",
+          "style": "dotted",
+          "color": "#f59e0b"
+        }
+      ]
+    },
+    "board_launcher": {
+      "id": "board_launcher",
+      "parent_id": "root",
+      "parent_node_id": "node_master_launcher",
+      "title": "런처 상세 아키텍처 (Drill-Down Sub-Board)",
+      "viewport": {
+        "x": 0,
+        "y": 0,
+        "zoom": 1
+      },
+      "nodes": [
+        {
+          "id": "node_tray_icon",
+          "type": "standard",
+          "title": "시스템 트레이 데몬",
+          "description": "백그라운드 최소화 및 상시 프로세스 유지",
+          "category": "core",
+          "status": "active",
+          "tags": [
+            "tray",
+            "gui"
+          ],
+          "x": 100,
+          "y": 100,
+          "width": 260,
+          "height": 130,
+          "sub_board_id": null,
+          "data": {}
+        },
+        {
+          "id": "node_process_watcher",
+          "type": "standard",
+          "title": "프로세스 워처 (Watchdog)",
+          "description": "비정상 종료 감지 및 자동 재시작 루프",
+          "category": "core",
+          "status": "active",
+          "tags": [
+            "watchdog",
+            "process"
+          ],
+          "x": 450,
+          "y": 100,
+          "width": 260,
+          "height": 130,
+          "sub_board_id": null,
+          "data": {}
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge_tray_watcher",
+          "from": "node_tray_icon",
+          "to": "node_process_watcher",
+          "label": "워치독 상태 바인딩",
+          "style": "solid",
+          "color": "#38bdf8"
+        }
+      ]
+    }
+  }
+}
