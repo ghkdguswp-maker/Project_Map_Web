@@ -193,6 +193,52 @@
       </div>
     </div>
 
+    <!-- 🎮 시뮬레이션 제어 HUD 바 (화면 중앙 하단) -->
+    <div id="simulation-hud">
+      <div class="sim-hud-title">
+        <span class="sim-pulse-dot"></span>
+        <span>파이프라인 시뮬레이터</span>
+      </div>
+      <div style="height: 18px; width: 1px; background: rgba(255,255,255,0.15);"></div>
+      <div class="sim-hud-controls">
+        <button class="sim-btn" id="sim-btn-play" onclick="if(app.sim.isRunning) app.sim.pause(); else app.sim.start();" title="시뮬레이션 실행 / 일시정지">
+          ▶️ 시뮬레이션
+        </button>
+        <button class="sim-btn" onclick="app.sim.step()" title="다음 노드로 1단계 실행 (Step)">
+          ⏭️ 스텝
+        </button>
+        <button class="sim-btn" onclick="app.sim.reset()" title="시뮬레이션 초기화">
+          ⏹️ 리셋
+        </button>
+        <button class="sim-btn" id="sim-btn-speed" onclick="app.sim.cycleSpeed()" title="시뮬레이션 재생 속도 (1x/2x/4x)">
+          1x
+        </button>
+      </div>
+      <div style="height: 18px; width: 1px; background: rgba(255,255,255,0.15);"></div>
+      <div id="sim-hud-status" class="sim-hud-status-text">대기중 (Idle)</div>
+      <button class="sim-btn sim-btn-term" onclick="app.sim.toggleTerminal()" title="실시간 실행 콘솔 로그 열기/닫기">
+        📟 로그
+      </button>
+    </div>
+
+    <!-- 📟 실시간 시뮬레이션 런타임 콘솔 터미널 (우측 하단) -->
+    <div id="simulation-terminal">
+      <div class="terminal-header">
+        <div class="terminal-title">
+          <span>📟 SIMULATION RUNTIME CONSOLE</span>
+        </div>
+        <div style="display: flex; gap: 6px;">
+          <button class="term-btn" onclick="app.sim.clearLogs()" title="로그 지우기">🧹 지우기</button>
+          <button class="term-btn" onclick="app.sim.toggleTerminal()" title="터미널 닫기">✕</button>
+        </div>
+      </div>
+      <div id="simulation-terminal-body" class="terminal-body">
+        <div class="sim-log-item log-sys">
+          <span class="log-time">[SYSTEM]</span> 💡 시뮬레이션 엔진 준비 완료. [▶️ 시뮬레이션] 버튼을 눌러 노드 파이프라인을 가동하세요.
+        </div>
+      </div>
+    </div>
+
     <!-- 좌측 하단 정보 HUD -->
     <div id="hud-info">
       <span id="hud-node-count">노드: 0개</span>
@@ -444,6 +490,7 @@
   <script src="js/canvas_3d_engine.js"></script>
   <script src="js/drill_down.js"></script>
   <script src="js/ai_exporter.js"></script>
+  <script src="js/simulation_engine.js"></script>
   <script src="js/app.js"></script>
 
   <script>

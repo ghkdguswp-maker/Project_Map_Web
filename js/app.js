@@ -104,6 +104,9 @@ class ProjectMapApp {
     // 3D 엔진 초기화
     this.engine3D = new Canvas3DEngine(this.canvas3DContainer, this.radarCanvasEl);
 
+    // 🎮 시뮬레이션 엔진 초기화
+    this.sim = new SimulationEngine(this);
+
     // 이벤트 리스너
     this.engine2D.onDataChange = () => this.triggerAutoSave();
     this.engine2D.onNodeDoubleClick = (node) => this.drillDown.enterSubBoard(node);
@@ -684,23 +687,24 @@ class ProjectMapApp {
   // ⚡ 실시간 데이터 플로우 시뮬레이션 토글
   // ========================================================
   toggleRealtimeSimulation() {
-    if (this.engine3D) {
-      this.engine3D.realtimeSimulationActive = !this.engine3D.realtimeSimulationActive;
-      const isActive = this.engine3D.realtimeSimulationActive;
-      if (this.btnRealtimeFlowEl) {
-        if (isActive) {
-          this.btnRealtimeFlowEl.innerHTML = '⏸️ 플로우 일시정지';
-          this.btnRealtimeFlowEl.style.background = 'rgba(16, 185, 129, 0.2)';
-          this.btnRealtimeFlowEl.style.borderColor = '#10b981';
-          this.btnRealtimeFlowEl.style.color = '#34d399';
-        } else {
-          this.btnRealtimeFlowEl.innerHTML = '▶️ 실시간 플로우';
+    if (this.sim) {
+      if (this.sim.isRunning) {
+        this.sim.pause();
+        if (this.btnRealtimeFlowEl) {
+          this.btnRealtimeFlowEl.innerHTML = '▶️ 시뮬레이션 가동';
           this.btnRealtimeFlowEl.style.background = 'rgba(6, 182, 212, 0.15)';
           this.btnRealtimeFlowEl.style.borderColor = '#06b6d4';
           this.btnRealtimeFlowEl.style.color = '#67e8f9';
         }
+      } else {
+        this.sim.start();
+        if (this.btnRealtimeFlowEl) {
+          this.btnRealtimeFlowEl.innerHTML = '⏸️ 시뮬레이션 정지';
+          this.btnRealtimeFlowEl.style.background = 'rgba(16, 185, 129, 0.2)';
+          this.btnRealtimeFlowEl.style.borderColor = '#10b981';
+          this.btnRealtimeFlowEl.style.color = '#34d399';
+        }
       }
-      this.showToast(isActive ? '⚡ 실시간 데이터 플로우 활성화' : '⏸️ 데이터 플로우 일시정지');
     }
   }
 
@@ -882,6 +886,7 @@ class ProjectMapApp {
             </div>
           </div>
           <div class="sidebar-item-actions">
+            <button class="node-action-btn" title="이 노드부터 시뮬레이션 실행" style="color: #00f0ff;" onclick="event.stopPropagation(); app.sim.start('${node.id}')">⚡</button>
             <button class="node-action-btn" title="연결선 만들기" onclick="event.stopPropagation(); app.startConnecting('${node.id}')">🔗</button>
             <button class="node-action-btn" title="수정" onclick="event.stopPropagation(); app.openNodeEditModalFor('${node.id}')">✏️</button>
             <button class="node-action-btn delete" title="삭제" onclick="event.stopPropagation(); app.deleteNodeById('${node.id}')">🗑️</button>
