@@ -747,8 +747,22 @@ body, html {
   transform: scale(1.1);
 }
 
-.node-action-btn.del-btn:hover {
-  background: #ef4444;
+.node-action-btn.del-btn,
+.node-action-btn.delete {
+  color: #f87171 !important;
+}
+
+.node-action-btn.del-btn:hover,
+.node-action-btn.delete:hover {
+  background: #ef4444 !important;
+  border-color: #ef4444 !important;
+  color: #fff !important;
+}
+
+.sidebar-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* 접이식 사이드바 토글 탭 버튼 (좌측 플로팅) */

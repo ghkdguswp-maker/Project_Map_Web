@@ -92,7 +92,7 @@ class DrillDownManager {
 
     this.historyStack.forEach((boardId, index) => {
       const board = this.projectData.boards[boardId];
-      const title = board ? board.title : boardId;
+      const title = board ? (board.title || board.name || boardId) : boardId;
       const isLast = index === this.historyStack.length - 1;
 
       const item = document.createElement('div');
@@ -110,5 +110,44 @@ class DrillDownManager {
         container.appendChild(sep);
       }
     });
+
+    // 🎯 서브 보드(폴더)에 진입한 상태일 때: 상위 이동 버튼 및 폴더 삭제 버튼 제공
+    const currentBoardId = this.getCurrentBoardId();
+    if (currentBoardId !== 'root') {
+      const btnGroup = document.createElement('div');
+      btnGroup.style.display = 'inline-flex';
+      btnGroup.style.alignItems = 'center';
+      btnGroup.style.gap = '6px';
+      btnGroup.style.marginLeft = '12px';
+
+      const backBtn = document.createElement('button');
+      backBtn.className = 'btn';
+      backBtn.style.padding = '2px 8px';
+      backBtn.style.fontSize = '11px';
+      backBtn.style.background = 'rgba(30, 41, 59, 0.8)';
+      backBtn.style.borderColor = '#475569';
+      backBtn.innerHTML = '⬆️ 상위로';
+      backBtn.title = '상위 보드로 이동';
+      backBtn.onclick = () => this.navigateBack();
+      btnGroup.appendChild(backBtn);
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-danger';
+      delBtn.style.padding = '2px 8px';
+      delBtn.style.fontSize = '11px';
+      delBtn.style.background = 'rgba(239, 68, 68, 0.2)';
+      delBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+      delBtn.style.color = '#f87171';
+      delBtn.innerHTML = '🗑️ 이 폴더 삭제';
+      delBtn.title = '현재 하위 캔버스(폴더) 영구 삭제';
+      delBtn.onclick = () => {
+        if (window.app && window.app.deleteBoardById) {
+          window.app.deleteBoardById(currentBoardId);
+        }
+      };
+      btnGroup.appendChild(delBtn);
+
+      container.appendChild(btnGroup);
+    }
   }
 }

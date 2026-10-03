@@ -261,6 +261,22 @@ class CanvasEngine {
         const sy = t.clientY - rect.top;
         const worldPos = this.screenToWorld(sx, sy);
 
+        // 🎯 이미 선택된 노드의 🗑️ 삭제 버튼 터치 판정
+        for (const selId of this.selectedNodeIds) {
+          const selNode = this.nodeMap.get(selId);
+          if (selNode) {
+            const btnX = selNode.x + selNode.width - 28;
+            const btnY = selNode.y + 6;
+            if (worldPos.x >= btnX - 6 && worldPos.x <= btnX + 28 &&
+                worldPos.y >= btnY - 6 && worldPos.y <= btnY + 28) {
+              if (window.app && window.app.deleteNodeById) {
+                window.app.deleteNodeById(selNode.id);
+              }
+              return;
+            }
+          }
+        }
+
         const hitNode = this.hitTestNode(worldPos.x, worldPos.y);
         if (hitNode) {
           if (window.app && window.app.isConnectingMode) {
@@ -399,6 +415,22 @@ class CanvasEngine {
           return;
         }
 
+        // 🎯 이미 선택된 노드의 🗑️ 삭제 버튼 클릭 판정
+        for (const selId of this.selectedNodeIds) {
+          const selNode = this.nodeMap.get(selId);
+          if (selNode) {
+            const btnX = selNode.x + selNode.width - 28;
+            const btnY = selNode.y + 6;
+            if (worldPos.x >= btnX - 4 && worldPos.x <= btnX + 26 &&
+                worldPos.y >= btnY - 4 && worldPos.y <= btnY + 26) {
+              if (window.app && window.app.deleteNodeById) {
+                window.app.deleteNodeById(selNode.id);
+              }
+              return;
+            }
+          }
+        }
+
         // O(1) 노드 히트테스트 (Spatial Hash Grid)
         const hitNode = this.hitTestNode(worldPos.x, worldPos.y);
         if (hitNode) {
@@ -505,7 +537,20 @@ class CanvasEngine {
       }
     });
 
-    this.canvas.addEventListener('contextmenu', e => e.preventDefault());
+    // 마우스 우클릭 (노드 선택 및 수정/삭제 모달 즉시 오픈)
+    this.canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
+      const worldPos = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const hitNode = this.hitTestNode(worldPos.x, worldPos.y);
+      if (hitNode && window.app) {
+        this.selectedNodeIds.clear();
+        this.selectedNodeIds.add(hitNode.id);
+        if (window.app.openNodeEditModalFor) {
+          window.app.openNodeEditModalFor(hitNode.id);
+        }
+      }
+    });
 
     // 미니맵 드래그 인터랙션
     if (this.minimap) {
@@ -841,23 +886,39 @@ class CanvasEngine {
       ctx.fill();
 
       // 타이틀
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 13px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      const truncatedTitle = this.truncateText(ctx, node.title || 'Untitled Node', node.width - 45);
+      const maxTitleWidth = isSelected ? node.width - 65 : (node.sub_board_id ? node.width - 45 : node.width - 24);
+      const truncatedTitle = this.truncateText(ctx, node.title || 'Untitled Node', maxTitleWidth);
       ctx.fillText(truncatedTitle, node.x + 12, node.y + headerHeight / 2);
 
       // 서브보드 뱃지
       if (node.sub_board_id) {
+        const badgeX = isSelected ? node.x + node.width - 46 : node.x + node.width - 20;
         ctx.fillStyle = '#a855f7';
         ctx.beginPath();
-        ctx.arc(node.x + node.width - 20, node.y + headerHeight / 2, 7, 0, Math.PI * 2);
+        ctx.arc(badgeX, node.y + headerHeight / 2, 7, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 9px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('▼', node.x + node.width - 20, node.y + headerHeight / 2 + 1);
+        ctx.fillText('▼', badgeX, node.y + headerHeight / 2 + 1);
+      }
+
+      // 🎯 선택된 노드일 경우 우측 상단에 🗑️ 삭제 퀵 액션 버튼 렌더링
+      if (isSelected) {
+        ctx.save();
+        ctx.fillStyle = '#ef4444';
+        this.roundRect(ctx, node.x + node.width - 28, node.y + 6, 22, 22, 5);
+        ctx.fill();
+        ctx.strokeStyle = '#fca5a5';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🗑️', node.x + node.width - 17, node.y + 17);
+        ctx.restore();
       }
 
       if (!isLowLOD) {

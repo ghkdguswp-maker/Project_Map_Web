@@ -422,10 +422,10 @@ class Canvas3DEngine {
         </div>
         <div style="display: flex; align-items: center; gap: 5px;">
           <div class="node-layer-badge" style="border-color:${layerInfo.color}; color:${layerInfo.color}">${layerInfo.name}</div>
-          <button class="node-action-btn run-btn" title="이 노드부터 시뮬레이션 실행" style="color: #00f0ff;" onclick="event.stopPropagation(); window.app.sim.start('${node.id}');">⚡</button>
-          <button class="node-action-btn connect-btn" title="다른 노드와 연결선 만들기" onclick="event.stopPropagation(); window.app.startConnecting('${node.id}');">🔗</button>
-          <button class="node-action-btn edit-btn" title="노드 수정 (꾹 누르기 또는 터치)" onclick="event.stopPropagation(); window.app.openNodeEditModalFor('${node.id}');">✏️</button>
-          <button class="node-action-btn del-btn" title="노드 삭제" onclick="event.stopPropagation(); window.app.deleteNodeById('${node.id}');">🗑️</button>
+          <button class="node-action-btn run-btn" title="이 노드부터 시뮬레이션 실행" style="color: #00f0ff;" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.sim.start('${node.id}');">⚡</button>
+          <button class="node-action-btn connect-btn" title="다른 노드와 연결선 만들기" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.startConnecting('${node.id}');">🔗</button>
+          <button class="node-action-btn edit-btn" title="노드 수정 (꾹 누르기 또는 터치)" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.openNodeEditModalFor('${node.id}');">✏️</button>
+          <button class="node-action-btn del-btn" title="노드 삭제" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.deleteNodeById('${node.id}');">🗑️</button>
         </div>
       </div>
       <div class="node-3d-body">
@@ -440,6 +440,11 @@ class Canvas3DEngine {
     let touchStartY = 0;
 
     const onTouchStart = (e) => {
+      // 🎯 액션 버튼(삭제, 수정, 연결 등) 터치 시 카드 드래그/롱프레스 발동 방지
+      if (e.target && e.target.closest && (e.target.closest('.node-action-btn') || e.target.closest('button') || e.target.closest('a'))) {
+        return;
+      }
+
       if (window.app && window.app.isConnectingMode) {
         window.app.completeConnecting(node.id);
         return;

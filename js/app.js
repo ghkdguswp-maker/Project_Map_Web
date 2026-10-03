@@ -618,19 +618,57 @@ class ProjectMapApp {
 
   deleteSelectedNode() {
     const currentBoard = this.drillDown.getCurrentBoard();
-    const targetId = this.is3DMode ? this.engine3D.selectedNodeId : Array.from(this.engine2D.selectedNodeIds)[0];
+    let targetIds = [];
 
-    if (!targetId) {
-      this.showToast('삭제할 노드를 먼저 선택하세요');
+    if (this.is3DMode) {
+      if (this.engine3D && this.engine3D.selectedNodeId) {
+        targetIds.push(this.engine3D.selectedNodeId);
+      }
+    } else {
+      if (this.engine2D && this.engine2D.selectedNodeIds) {
+        targetIds = Array.from(this.engine2D.selectedNodeIds);
+      }
+    }
+
+    if (targetIds.length === 0) {
+      this.showToast('삭제할 노드를 먼저 선택하세요.');
       return;
     }
 
-    currentBoard.nodes = currentBoard.nodes.filter(n => n.id !== targetId);
-    currentBoard.edges = currentBoard.edges.filter(e => e.from !== targetId && e.to !== targetId);
+    const firstNode = currentBoard.nodes.find(n => n.id === targetIds[0]);
+    const promptMsg = targetIds.length === 1
+      ? `정말 [${firstNode ? firstNode.title : '선택 노드'}] 노드를 삭제하시겠습니까?`
+      : `선택한 ${targetIds.length}개 노드를 모두 영구 삭제하시겠습니까?`;
 
-    this.syncActiveBoard();
-    this.triggerAutoSave();
-    this.showToast('노드가 삭제되었습니다');
+    setTimeout(() => {
+      if (!confirm(promptMsg)) {
+        return;
+      }
+
+      // 연결된 하위 보드(sub_board_id)가 있는 경우 함께 정리
+      targetIds.forEach(id => {
+        const node = currentBoard.nodes.find(n => n.id === id);
+        if (node && node.sub_board_id && this.projectData.boards[node.sub_board_id]) {
+          delete this.projectData.boards[node.sub_board_id];
+          this.drillDown.historyStack = this.drillDown.historyStack.filter(bId => bId !== node.sub_board_id);
+        }
+      });
+
+      const targetSet = new Set(targetIds);
+      currentBoard.nodes = currentBoard.nodes.filter(n => !targetSet.has(n.id));
+      currentBoard.edges = currentBoard.edges.filter(e => !targetSet.has(e.from) && !targetSet.has(e.to));
+
+      if (this.engine3D) {
+        this.engine3D.selectedNodeId = null;
+      }
+      if (this.engine2D) {
+        this.engine2D.selectedNodeIds.clear();
+      }
+
+      this.syncActiveBoard();
+      this.triggerAutoSave();
+      this.showToast(`🗑️ ${targetIds.length}개 노드가 삭제되었습니다.`);
+    }, 10);
   }
 
   // ========================================================
@@ -948,27 +986,138 @@ class ProjectMapApp {
 
   // 노드 개별 삭제
   deleteNodeById(nodeId) {
-    const currentBoard = this.drillDown.getCurrentBoard();
-    const node = currentBoard.nodes.find(n => n.id === nodeId);
+    let currentBoard = this.drillDown.getCurrentBoard();
+    let node = currentBoard.nodes.find(n => n.id === nodeId);
+    let targetBoard = currentBoard;
+
+    // 현재 보드에 없으면 다른 보드에서도 검색
+    if (!node) {
+      for (const [bid, b] of Object.entries(this.projectData.boards || {})) {
+        if (b.nodes) {
+          const found = b.nodes.find(n => n.id === nodeId);
+          if (found) {
+            node = found;
+            targetBoard = b;
+            break;
+          }
+        }
+      }
+    }
+
     const nodeTitle = node ? node.title : '노드';
 
-    if (!confirm(`정말 [${nodeTitle}] 노드를 삭제하시겠습니까?`)) {
+    setTimeout(() => {
+      if (!confirm(`정말 [${nodeTitle}] 노드를 삭제하시겠습니까?`)) {
+        return;
+      }
+
+      // 만약 이 노드에 연결된 하위 보드(sub_board_id)가 있다면 하위 보드도 정리할지 확인
+      if (node && node.sub_board_id && this.projectData.boards[node.sub_board_id]) {
+        const subBoard = this.projectData.boards[node.sub_board_id];
+        const subCount = subBoard.nodes ? subBoard.nodes.length : 0;
+        if (confirm(`이 노드에 연결된 하위 폴더([${subBoard.title || subBoard.name || '서브 보드'}], 노드 ${subCount}개)도 함께 삭제하시겠습니까?`)) {
+          delete this.projectData.boards[node.sub_board_id];
+          this.drillDown.historyStack = this.drillDown.historyStack.filter(id => id !== node.sub_board_id);
+        }
+      }
+
+      targetBoard.nodes = targetBoard.nodes.filter(n => n.id !== nodeId);
+      targetBoard.edges = targetBoard.edges.filter(e => e.from !== nodeId && e.to !== nodeId);
+
+      if (this.engine3D && this.engine3D.selectedNodeId === nodeId) {
+        this.engine3D.selectedNodeId = null;
+      }
+      if (this.engine2D) {
+        this.engine2D.selectedNodeIds.delete(nodeId);
+      }
+
+      this.syncActiveBoard();
+      this.triggerAutoSave();
+      this.showToast(`🗑️ [${nodeTitle}] 노드가 삭제되었습니다.`);
+    }, 10);
+  }
+
+  // 📁 폴더(하위 보드) 삭제
+  deleteBoardById(boardId) {
+    if (!boardId || boardId === 'root') {
+      this.showToast('⚠️ 최상위 관제 보드(root)는 삭제할 수 없습니다.');
       return;
     }
 
-    currentBoard.nodes = currentBoard.nodes.filter(n => n.id !== nodeId);
-    currentBoard.edges = currentBoard.edges.filter(e => e.from !== nodeId && e.to !== nodeId);
-
-    if (this.engine3D && this.engine3D.selectedNodeId === nodeId) {
-      this.engine3D.selectedNodeId = null;
-    }
-    if (this.engine2D) {
-      this.engine2D.selectedNodeIds.delete(nodeId);
+    const board = this.projectData.boards[boardId];
+    if (!board) {
+      this.showToast('⚠️ 삭제할 보드를 찾을 수 없습니다.');
+      return;
     }
 
-    this.syncActiveBoard();
-    this.triggerAutoSave();
-    this.showToast(`🗑️ [${nodeTitle}] 노드가 삭제되었습니다.`);
+    const boardTitle = board.title || board.name || boardId;
+    const nodeCount = board.nodes ? board.nodes.length : 0;
+    const confirmMsg = nodeCount > 0 
+      ? `정말 [${boardTitle}] 폴더(보드)와 내부 ${nodeCount}개 노드를 모두 영구 삭제하시겠습니까?`
+      : `정말 [${boardTitle}] 폴더(보드)를 삭제하시겠습니까?`;
+
+    setTimeout(() => {
+      if (!confirm(confirmMsg)) {
+        return;
+      }
+
+      // 1. 만약 현재 사용자가 이 보드(또는 그 하위 보드) 안에 있다면 부모 보드로 먼저 이동
+      const currentId = this.drillDown.getCurrentBoardId();
+      const isInsideOrDescendant = (checkId) => {
+        if (checkId === boardId) return true;
+        let curr = this.projectData.boards[checkId];
+        while (curr && (curr.parent_id || curr.parent_board_id)) {
+          const pId = curr.parent_id || curr.parent_board_id;
+          if (pId === boardId) return true;
+          curr = this.projectData.boards[pId];
+        }
+        return false;
+      };
+
+      if (isInsideOrDescendant(currentId)) {
+        const parentId = board.parent_id || board.parent_board_id || 'root';
+        this.drillDown.navigateToBoard(parentId);
+      }
+
+      // 2. 하위 보드들까지 재귀적으로 수집 및 삭제
+      const collectDescendantBoardIds = (targetId) => {
+        let descIds = [targetId];
+        for (const [bid, b] of Object.entries(this.projectData.boards)) {
+          if (b.parent_id === targetId || b.parent_board_id === targetId) {
+            descIds.push(...collectDescendantBoardIds(bid));
+          }
+        }
+        return descIds;
+      };
+      const boardsToDelete = collectDescendantBoardIds(boardId);
+
+      boardsToDelete.forEach(bid => {
+        delete this.projectData.boards[bid];
+        this.drillDown.historyStack = this.drillDown.historyStack.filter(id => id !== bid);
+      });
+
+      // 3. 다른 보드들에 있던 이 보드들을 가리키는 대표 노드(sub_board_id) 정리
+      for (const [bid, b] of Object.entries(this.projectData.boards)) {
+        if (b.nodes) {
+          b.nodes = b.nodes.filter(n => {
+            if (boardsToDelete.includes(n.sub_board_id)) {
+              if (n.id.startsWith('node_rep_') || (n.tags && n.tags.includes('split'))) {
+                return false; // 대표 노드는 제거
+              } else {
+                n.sub_board_id = null; // 일반 노드는 연결만 해제
+                return true;
+              }
+            }
+            return true;
+          });
+        }
+      }
+
+      // 4. 동기화 및 저장
+      this.syncActiveBoard();
+      this.triggerAutoSave();
+      this.showToast(`🗑️ [${boardTitle}] 폴더(보드)가 성공적으로 삭제되었습니다.`);
+    }, 10);
   }
 
   // 모달 내부에서 현재 편집 노드 삭제
@@ -1009,13 +1158,16 @@ class ProjectMapApp {
       const nodeCount = b.nodes ? b.nodes.length : 0;
 
       boardsHtml += `
-        <div class="sidebar-item ${isActive ? 'active' : ''}" onclick="app.drillDown.navigateToBoard('${bid}')">
-          <div style="font-size: 16px;">${icon}</div>
-          <div class="sidebar-item-info">
-            <div class="sidebar-item-title">${this.escapeHtml(b.title || bid)}</div>
+        <div class="sidebar-item ${isActive ? 'active' : ''}">
+          <div style="font-size: 16px; cursor: pointer;" onclick="app.drillDown.navigateToBoard('${bid}')">${icon}</div>
+          <div class="sidebar-item-info" onclick="app.drillDown.navigateToBoard('${bid}')" style="cursor: pointer; flex: 1;">
+            <div class="sidebar-item-title">${this.escapeHtml(b.title || b.name || bid)}</div>
             <div class="sidebar-item-meta">${nodeCount}개 노드 ${isRoot ? '(최상위 관제)' : '(서브 계층)'}</div>
           </div>
-          ${isActive ? '<span style="color:#38bdf8; font-size:12px; font-weight:bold;">현재</span>' : ''}
+          <div class="sidebar-item-actions">
+            ${isActive ? '<span style="color:#38bdf8; font-size:11px; font-weight:bold; margin-right:4px;">현재</span>' : ''}
+            ${!isRoot ? `<button class="node-action-btn delete" title="폴더(보드) 영구 삭제" onclick="event.stopPropagation(); app.deleteBoardById('${bid}');">🗑️</button>` : ''}
+          </div>
         </div>
       `;
     }
@@ -1291,6 +1443,13 @@ class ProjectMapApp {
       }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
+        const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+        if (activeTag === 'input' || activeTag === 'textarea' || (document.activeElement && document.activeElement.isContentEditable)) {
+          return;
+        }
+        if (document.querySelector('.modal-overlay.active')) {
+          return;
+        }
         this.deleteSelectedNode();
       } else if (e.key === 'Escape') {
         this.closeAiSpecModal();
