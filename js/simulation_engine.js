@@ -191,9 +191,9 @@ class SimulationEngine {
       el.classList.add('status-running');
     }
 
-    // 카메라 자동 추적
-    if (this.autoCameraTrack && this.app.is3DMode && this.app.engine3D) {
-      this.app.engine3D.flyToNode(node);
+    // 카메라 자동 추적 (2D & 3D 공통 지원)
+    if (this.autoCameraTrack && this.app.focusAndFlyToNode) {
+      this.app.focusAndFlyToNode(node.id);
     }
 
     if (this.statusTextEl) {

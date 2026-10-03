@@ -26,11 +26,11 @@ class AiPromptExporter {
     // 모든 보드의 노드 및 엣지 수집
     Object.values(projectData.boards).forEach(board => {
       board.nodes.forEach(node => {
-        const cleanTitle = (node.title || node.id).replace(/["()]/g, '');
+        const cleanTitle = (node.title || node.id).replace(/["`\[\]()]/g, ' ').trim();
         md += `    ${node.id}["${cleanTitle}"]\n`;
       });
       board.edges.forEach(edge => {
-        const labelStr = edge.label ? `|${edge.label}|` : '';
+        const labelStr = edge.label ? `|${edge.label.replace(/["|]/g, '')}|` : '';
         md += `    ${edge.from} -->${labelStr} ${edge.to}\n`;
       });
     });

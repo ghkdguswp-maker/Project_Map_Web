@@ -5,10 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="mobile-web-app-capable" content="yes">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>프로젝트 맵 (Project Map) - 3D AI 연동형 사령탑</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="manifest" href="manifest.json?v=20261003_v3">
+  <link rel="stylesheet" href="css/style.css?v=20261003_v3">
 </head>
 <body>
   <div id="app-container">
@@ -49,12 +51,17 @@
           <span class="status-dot"></span> 자동 저장됨
         </div>
 
+        <!-- 🔄 원클릭 PC ⇄ 태블릿 강제 실시간 동기화 버튼 -->
+        <button class="btn" style="background: rgba(16, 185, 129, 0.2); border-color: #10b981; color: #34d399; font-weight: 700;" onclick="app.manualSyncNow()" title="클라우드(Gist) 및 PC와 최신 맵 실시간 동기화">
+          🔄 동기화
+        </button>
+
         <button class="btn" style="background: linear-gradient(135deg, #059669, #10b981); border-color: #34d399;" onclick="app.openTabletModal()" title="태블릿 연동 주소 및 클라우드 동기화 안내">
           📱 태블릿 연동
         </button>
 
         <button class="btn" onclick="app.pushCodeToGitHub()" title="프로그램 소스코드 GitHub로 즉시 푸시">
-          🔄 GitHub 푸시
+          🚀 GitHub 푸시
         </button>
 
         <button class="btn btn-ai-spec" onclick="app.openAiSpecModal()" title="AI 전용 작업 지시서 생성 (Ctrl+E)">
@@ -596,18 +603,18 @@
   <script src="libs/CSS3DRenderer.js"></script>
   <script src="js/qwebchannel.js"></script>
 
-  <!-- 코어 엔진 로드 -->
-  <script src="js/canvas_engine.js"></script>
-  <script src="js/canvas_3d_engine.js"></script>
-  <script src="js/drill_down.js"></script>
-  <script src="js/ai_exporter.js"></script>
-  <script src="js/simulation_engine.js"></script>
-  <script src="js/app.js"></script>
+  <!-- 코어 엔진 로드 (캐시 버스팅 적용) -->
+  <script src="js/canvas_engine.js?v=20261003_v3"></script>
+  <script src="js/canvas_3d_engine.js?v=20261003_v3"></script>
+  <script src="js/drill_down.js?v=20261003_v3"></script>
+  <script src="js/ai_exporter.js?v=20261003_v3"></script>
+  <script src="js/simulation_engine.js?v=20261003_v3"></script>
+  <script src="js/app.js?v=20261003_v3"></script>
 
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+        navigator.serviceWorker.register('./service-worker.js?v=20261003_v3').catch(() => {});
       });
     }
   </script>
