@@ -345,9 +345,36 @@ class Canvas3DEngine {
 
     const layerInfo = this.layers[node.category] || { name: '일반 레이어', color: '#38bdf8' };
 
-    // HTML 내부 구조 (체크리스트, 스키마, 마크다운 완벽 지원)
+    // HTML 내부 구조 (그룹, 이미지, 문서, 체크리스트, 스키마, 마크다운 완벽 지원)
     let contentHtml = '';
-    if (node.type === 'checklist' && node.data && node.data.items) {
+    if (node.type === 'group') {
+      contentHtml += `
+        <div class="node-group-body" style="padding: 12px; color: #cbd5e1; font-size: 12px;">
+          <div style="margin-bottom: 6px; font-weight: 700; color: #c084fc; display: flex; align-items: center; gap: 6px;">
+            <span>🔲 그룹 묶음 구역</span>
+          </div>
+          <div style="line-height: 1.5; color: #94a3b8;">${node.description || '이 영역 내에 하위 노드들을 배치하여 그룹으로 관리하세요.'}</div>
+        </div>
+      `;
+    } else if (node.type === 'image' && node.data) {
+      contentHtml += `
+        <div class="node-image-content">
+          <img src="${node.data.url || ''}" alt="${node.title}" class="node-image-img" title="클릭하여 원본 보기" onclick="event.stopPropagation(); window.open('${node.data.url}', '_blank')">
+          <div class="node-desc-text" style="text-align: center; font-size: 11px; color: #94a3b8; margin-top: 4px;">${node.description || ''}</div>
+        </div>
+      `;
+    } else if (node.type === 'document' && node.data) {
+      contentHtml += `
+        <div class="node-doc-content">
+          <div class="node-doc-icon">📄</div>
+          <div class="node-doc-meta">
+            <div class="node-doc-filename" title="${node.data.fileName || node.title}">${node.data.fileName || node.title}</div>
+            <div style="font-size: 10px; color: #94a3b8;">${node.description || '첨부 문서 파일'}</div>
+          </div>
+          <a href="${node.data.url || '#'}" target="_blank" download="${node.data.fileName || 'document'}" class="node-doc-btn" onclick="event.stopPropagation()">열기</a>
+        </div>
+      `;
+    } else if (node.type === 'checklist' && node.data && node.data.items) {
       const total = node.data.items.length;
       const done = node.data.items.filter(i => i.done).length;
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -380,7 +407,8 @@ class Canvas3DEngine {
     }
 
     const isRunning = node.status === 'running';
-    el.className = `node-3d-card ${isRunning ? 'status-running' : ''}`;
+    const isGroup = node.type === 'group';
+    el.className = `node-3d-card ${isGroup ? 'node-type-group' : ''} ${isRunning ? 'status-running' : ''}`;
 
     const runningBadgeHtml = isRunning 
       ? '<span class="status-badge-running"><span class="spinner-mini"></span> RUNNING</span>' 
@@ -538,17 +566,55 @@ class Canvas3DEngine {
       midPoint.z += Math.max(zDiff * 0.35, 120);
 
       const curve = new THREE.QuadraticBezierCurve3(p1, midPoint, p2);
-      const tubeRadius = edge.style === 'solid' ? 2.8 : 2.0;
+
+      // 엣지 관계 유형별 스타일링 (상하 / 동등 / 선후 / 데이터 / 참조)
+      let tubeRadius = 2.6;
+      let isWireframe = false;
+      let badgeHtml = '';
+      let defaultColorHex = 0x38bdf8;
+      let particleSpeed = 0.18 + (edgeIdx % 3) * 0.05;
+
+      switch (edge.style) {
+        case 'hierarchy':
+          tubeRadius = 3.8;
+          defaultColorHex = 0xf59e0b; // 앰버 골드
+          badgeHtml = '<span class="rel-badge rel-hierarchy">👑 상하</span>';
+          break;
+        case 'peer':
+          tubeRadius = 2.2;
+          defaultColorHex = 0x10b981; // 에메랄드 그린
+          badgeHtml = '<span class="rel-badge rel-peer">🤝 동등</span>';
+          isWireframe = true;
+          break;
+        case 'sequence':
+          tubeRadius = 2.8;
+          defaultColorHex = 0x6366f1; // 인디고 퍼플
+          badgeHtml = '<span class="rel-badge rel-sequence">⏱️ 선후</span>';
+          particleSpeed = 0.35 + (edgeIdx % 3) * 0.08; // 고속 진행
+          break;
+        case 'dotted':
+          tubeRadius = 1.8;
+          defaultColorHex = 0x94a3b8; // 슬레이트
+          badgeHtml = '<span class="rel-badge rel-ref">📌 참조</span>';
+          isWireframe = true;
+          break;
+        case 'solid':
+        default:
+          tubeRadius = 2.6;
+          defaultColorHex = 0x38bdf8; // 시안 블루
+          badgeHtml = '<span class="rel-badge rel-data">⚡ 데이터</span>';
+          break;
+      }
+
       const tubeGeo = new THREE.TubeGeometry(curve, 36, tubeRadius, 8, false);
-      
-      const edgeColorHex = edge.color ? parseInt(edge.color.replace('#', '0x')) : 0x38bdf8;
+      const edgeColorHex = edge.color ? parseInt(edge.color.replace('#', '0x')) : defaultColorHex;
       const tubeMat = new THREE.MeshStandardMaterial({
         color: edgeColorHex,
         emissive: edgeColorHex,
         emissiveIntensity: 0.65,
         roughness: 0.2,
         metalness: 0.8,
-        wireframe: edge.style === 'dashed'
+        wireframe: isWireframe
       });
 
       const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
@@ -558,7 +624,7 @@ class Canvas3DEngine {
       const labelText = edge.label || '파이프라인 연결';
       const labelEl = document.createElement('div');
       labelEl.className = 'edge-3d-badge';
-      labelEl.innerHTML = `<span class="edge-icon">⚡</span><span>${labelText}</span>`;
+      labelEl.innerHTML = `${badgeHtml}<span>${labelText}</span>`;
       labelEl.title = `클릭 시 연결 정보 및 라벨 수정 (${labelText})`;
       labelEl.onclick = (e) => {
         e.stopPropagation();
@@ -583,7 +649,7 @@ class Canvas3DEngine {
         this.edgeParticles.push({
           mesh: pMesh,
           curve: curve,
-          speed: 0.18 + (edgeIdx % 3) * 0.05,
+          speed: particleSpeed,
           offset: i * 0.5
         });
       }

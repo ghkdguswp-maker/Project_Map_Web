@@ -61,6 +61,11 @@
           ⚡ AI 명세서 내보내기
         </button>
 
+        <!-- 📂 파일 파이프라인 (불러오기/내보내기/이어붙이기/분할) -->
+        <button class="btn" style="background: linear-gradient(135deg, #1e40af, #3b82f6); border-color: #60a5fa;" onclick="app.openFileManageModal()" title="프로젝트 파일 불러오기, 내보내기, 이어 붙이기, 노드 분할/추출">
+          📁 파일·분할·병합
+        </button>
+
         <button class="btn" onclick="app.saveData()" title="프로젝트 저장 (Ctrl+S)">
           💾 저장
         </button>
@@ -96,7 +101,7 @@
 
       <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 4px 0;"></div>
 
-      <!-- 2. 시스템/엔지니어링 노드군 -->
+      <!-- 2. 시스템 & 엔지니어링 노드군 -->
       <div style="font-size: 10px; font-weight: bold; color: #38bdf8; padding: 2px 4px; text-transform: uppercase;">⚙️ 시스템 & AI</div>
       <button class="palette-btn" onclick="app.createNode('standard')" title="새 일반 컴포넌트 추가">
         <span class="icon">🟦</span> 일반 노드
@@ -113,7 +118,21 @@
 
       <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 4px 0;"></div>
 
-      <!-- 3. 파이프라인 연결 및 조작 -->
+      <!-- 3. 컨테이너 묶음 & 미디어 파일 삽입 -->
+      <div style="font-size: 10px; font-weight: bold; color: #a855f7; padding: 2px 4px; text-transform: uppercase;">🔲 묶음 & 첨부 파일</div>
+      <button class="palette-btn" onclick="app.createNode('group')" title="노드들을 묶는 반투명 그룹 테두리 구역 생성">
+        <span class="icon">🔲</span> 그룹 묶음
+      </button>
+      <button class="palette-btn" onclick="app.openMediaInsertModal('image')" title="캔버스에 그림/이미지 파일 삽입">
+        <span class="icon">🖼️</span> 그림 삽입
+      </button>
+      <button class="palette-btn" onclick="app.openMediaInsertModal('document')" title="캔버스에 문서(PDF/TXT/MD) 파일 삽입">
+        <span class="icon">📄</span> 문서 첨부
+      </button>
+
+      <div style="height: 1px; background: rgba(255,255,255,0.1); margin: 4px 0;"></div>
+
+      <!-- 4. 파이프라인 연결 및 조작 -->
       <button class="palette-btn" id="btn-palette-connect" style="color: #38bdf8;" onclick="app.startConnectingPrompt()" title="노드끼리 연결 라인 생성">
         <span class="icon">🔗</span> 노드 연결
       </button>
@@ -449,21 +468,23 @@
 
           <div style="display: flex; gap: 10px;">
             <div style="flex: 1;">
-              <label class="form-label">연결 성격 (파이프라인 타입)</label>
-              <select id="edit-edge-style" class="form-input">
-                <option value="solid">⚡ 실시간 데이터 파이프라인 (Solid)</option>
-                <option value="dashed">🔄 주기적 비동기 / 호출 (Dashed)</option>
-                <option value="dotted">📌 선행 의존 관계 / 조건 (Dotted)</option>
+              <label class="form-label">연결 관계 유형 (상하 / 동등 / 선후)</label>
+              <select id="edit-edge-style" class="form-input" onchange="app.handleEdgeRelationTypeChange(this.value)">
+                <option value="hierarchy">👑 상하 관계 (Hierarchy / 지휘·종속·포함)</option>
+                <option value="peer">🤝 동등 관계 (Peer / 상호 대등 연동·동기화)</option>
+                <option value="sequence">⏱️ 선후 관계 (Sequence / 선행 ➔ 후행 순차 진행)</option>
+                <option value="solid">⚡ 실시간 데이터 파이프라인 (Data Stream)</option>
+                <option value="dotted">📌 단순 참조 / 간접 의존 (Reference)</option>
               </select>
             </div>
             <div style="flex: 1;">
               <label class="form-label">라인 네온 색상</label>
               <select id="edit-edge-color" class="form-input">
+                <option value="#f59e0b">🟡 앰버 골드 (상하/마일스톤)</option>
+                <option value="#10b981">🟢 에메랄드 (동등/완료)</option>
+                <option value="#6366f1">🟣 인디고 퍼플 (선후/단계)</option>
                 <option value="#38bdf8">🔵 시안 블루 (기본 데이터)</option>
-                <option value="#10b981">🟢 에메랄드 (완료/성공)</option>
-                <option value="#a855f7">🟣 네온 퍼플 (AI / 연산)</option>
-                <option value="#f59e0b">🟡 앰버 골드 (목표 / 플랜)</option>
-                <option value="#ec4899">🔴 핫 핑크 (경고 / 중요)</option>
+                <option value="#ec4899">🔴 핫 핑크 (경고/주의)</option>
               </select>
             </div>
           </div>
@@ -474,6 +495,96 @@
             <button class="btn" onclick="app.closeEdgeEditModal()">취소</button>
             <button class="btn btn-primary" onclick="app.saveEdgeEdit()">💾 저장 완료</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 📂 파일 파이프라인 & 노드 분할/병합 모달 -->
+    <div class="modal-overlay" id="file-manage-modal">
+      <div class="modal-box" style="max-width: 650px; width: 94%;">
+        <div class="modal-header">
+          <div class="modal-title">📁 파일 파이프라인 & 노드 분할 / 병합</div>
+          <button class="btn btn-icon" onclick="app.closeFileManageModal()">✕</button>
+        </div>
+        <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+          <!-- 1. 파일 내보내기 & 불러오기 -->
+          <div style="background: rgba(30, 41, 59, 0.6); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+            <div style="font-weight: 700; color: #38bdf8; font-size: 13px; margin-bottom: 8px;">💾 전체 프로젝트 파일 관리</div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="btn btn-primary" onclick="app.exportProjectJson()">📤 전체 프로젝트 내보내기 (JSON)</button>
+              <button class="btn" onclick="document.getElementById('import-file-input').click()">📥 프로젝트 불러오기 (덮어쓰기)</button>
+              <input type="file" id="import-file-input" accept=".json" style="display: none;" onchange="app.handleImportProjectFile(event)">
+            </div>
+            <p style="font-size: 11px; color: #94a3b8; margin-top: 6px;">현재 캔버스의 모든 보드, 노드, 엣지 데이터를 완전한 JSON 파일로 백업하거나 불러옵니다.</p>
+          </div>
+
+          <!-- 2. 파일 이어 붙이기 (Merge / Append) -->
+          <div style="background: rgba(30, 41, 59, 0.6); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+            <div style="font-weight: 700; color: #10b981; font-size: 13px; margin-bottom: 8px;">🔗 다른 프로젝트 / 노드 파일 이어 붙이기 (Merge)</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button class="btn" style="background: rgba(16, 185, 129, 0.2); border-color: #10b981; color: #34d399;" onclick="document.getElementById('merge-file-input').click()">
+                🧩 외부 파일 현재 보드에 이어 붙이기
+              </button>
+              <input type="file" id="merge-file-input" accept=".json" style="display: none;" onchange="app.handleMergeProjectFile(event)">
+            </div>
+            <p style="font-size: 11px; color: #94a3b8; margin-top: 6px;">기존 캔버스 내용을 지우지 않고, 외부 프로젝트 파일의 노드들을 현재 화면에 추가로 병합합니다.</p>
+          </div>
+
+          <!-- 3. 노드 분해 및 파일 분할 (Split into Sub-Board) -->
+          <div style="background: rgba(30, 41, 59, 0.6); padding: 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08);">
+            <div style="font-weight: 700; color: #f59e0b; font-size: 13px; margin-bottom: 8px;">✂️ 선택 노드 분해 및 하위 서브보드로 분할 (Split)</div>
+            <div style="display: flex; gap: 8px; flex-direction: column;">
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="split-subboard-name" class="form-input" placeholder="분할 생성할 하위 서브 보드 이름 (예: 신규 모바일 전용 모듈군)">
+                <button class="btn" style="background: rgba(245, 158, 11, 0.2); border-color: #f59e0b; color: #fbbf24; white-space: nowrap;" onclick="app.splitSelectedNodesToSubBoard()">
+                  ✂️ 서브보드로 분할 이동
+                </button>
+              </div>
+              <p style="font-size: 11px; color: #94a3b8; margin-top: 4px;">선택된 노드들을 현재 화면에서 분리하여 전용 하위 서브 보드로 추출하고, 현재 캔버스에는 대표 노드를 남겨 연결합니다.</p>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" onclick="app.closeFileManageModal()">닫기</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 🖼️ 그림 및 문서 파일 삽입 모달 -->
+    <div class="modal-overlay" id="media-insert-modal">
+      <div class="modal-box" style="max-width: 540px; width: 92%;">
+        <div class="modal-header">
+          <div class="modal-title" id="media-insert-modal-title">🖼️ 미디어 파일 캔버스 삽입</div>
+          <button class="btn btn-icon" onclick="app.closeMediaInsertModal()">✕</button>
+        </div>
+        <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+          <input type="hidden" id="media-insert-type" value="image">
+
+          <div>
+            <label class="form-label">카드 제목</label>
+            <input type="text" id="media-insert-title" class="form-input" placeholder="예: 시스템 아키텍처 다이어그램 / 요구사항 명세서">
+          </div>
+
+          <div>
+            <label class="form-label">로컬 파일 업로드 (그림 또는 문서)</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="file" id="media-file-input" class="form-input" onchange="app.handleMediaFileSelected(event)">
+            </div>
+          </div>
+
+          <div>
+            <label class="form-label">또는 웹 URL 직접 입력</label>
+            <input type="text" id="media-insert-url" class="form-input" placeholder="https://example.com/image.png 또는 문서 링크">
+          </div>
+
+          <div>
+            <label class="form-label">설명 및 메모</label>
+            <textarea id="media-insert-desc" class="form-input" rows="2" placeholder="파일 관련 메모나 주석을 입력하세요"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" onclick="app.closeMediaInsertModal()">취소</button>
+          <button class="btn btn-primary" onclick="app.confirmMediaInsert()">📌 캔버스에 삽입</button>
         </div>
       </div>
     </div>

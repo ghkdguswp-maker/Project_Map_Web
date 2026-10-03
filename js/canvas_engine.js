@@ -700,24 +700,50 @@ class CanvasEngine {
       const cx2 = p2.x - Math.max(dx, 40);
       const cy2 = p2.y;
 
+      let edgeColor = edge.color || '#38bdf8';
+      let edgeLineWidth = Math.max(1.5, 2.5 / zoom);
+      let lineDash = [];
+      let labelPrefix = '';
+
+      if (edge.style === 'hierarchy') {
+        edgeColor = edge.color || '#f59e0b';
+        edgeLineWidth = Math.max(2.5, 3.8 / zoom);
+        labelPrefix = '👑 [상하] ';
+      } else if (edge.style === 'peer') {
+        edgeColor = edge.color || '#10b981';
+        edgeLineWidth = Math.max(1.8, 2.4 / zoom);
+        lineDash = [6, 5];
+        labelPrefix = '🤝 [동등] ';
+      } else if (edge.style === 'sequence') {
+        edgeColor = edge.color || '#6366f1';
+        edgeLineWidth = Math.max(2.2, 3.0 / zoom);
+        lineDash = [10, 4];
+        labelPrefix = '⏱️ [선후] ';
+      } else if (edge.style === 'dotted') {
+        edgeColor = edge.color || '#94a3b8';
+        edgeLineWidth = Math.max(1.2, 1.8 / zoom);
+        lineDash = [3, 4];
+        labelPrefix = '📌 [참조] ';
+      } else if (edge.style === 'dashed') {
+        lineDash = [8, 5];
+      } else {
+        labelPrefix = '⚡ [데이터] ';
+      }
+
       ctx.save();
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.bezierCurveTo(cx1, cy1, cx2, cy2, p2.x, p2.y);
 
-      ctx.strokeStyle = edge.color || '#38bdf8';
-      ctx.lineWidth = Math.max(1.5, 2.5 / zoom);
-
-      if (edge.style === 'dashed') ctx.setLineDash([8, 5]);
-      else if (edge.style === 'dotted') ctx.setLineDash([3, 4]);
-      else ctx.setLineDash([]);
-
+      ctx.strokeStyle = edgeColor;
+      ctx.lineWidth = edgeLineWidth;
+      ctx.setLineDash(lineDash);
       ctx.stroke();
 
       // 화살표 팁
       const angle = Math.atan2(p2.y - cy2, p2.x - cx2);
-      const arrowSize = 10;
-      ctx.fillStyle = edge.color || '#38bdf8';
+      const arrowSize = edge.style === 'hierarchy' ? 14 : 10;
+      ctx.fillStyle = edgeColor;
       ctx.beginPath();
       ctx.moveTo(p2.x, p2.y);
       ctx.lineTo(p2.x - arrowSize * Math.cos(angle - Math.PI / 7), p2.y - arrowSize * Math.sin(angle - Math.PI / 7));
@@ -726,22 +752,24 @@ class CanvasEngine {
       ctx.fill();
 
       // 라벨
-      if (edge.label && zoom > 0.45) {
+      const fullLabel = labelPrefix + (edge.label || '연결');
+      if (fullLabel && zoom > 0.4) {
         const midX = (p1.x + p2.x) / 2;
         const midY = (p1.y + p2.y) / 2;
-        ctx.font = '11px sans-serif';
-        const textWidth = ctx.measureText(edge.label).width;
+        ctx.font = 'bold 11px sans-serif';
+        const textWidth = ctx.measureText(fullLabel).width;
 
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.strokeStyle = edgeColor;
         ctx.lineWidth = 1;
-        ctx.fillRect(midX - textWidth / 2 - 6, midY - 10, textWidth + 12, 20);
-        ctx.strokeRect(midX - textWidth / 2 - 6, midY - 10, textWidth + 12, 20);
+        this.roundRect(ctx, midX - textWidth / 2 - 8, midY - 11, textWidth + 16, 22, 5);
+        ctx.fill();
+        ctx.stroke();
 
-        ctx.fillStyle = '#94a3b8';
+        ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(edge.label, midX, midY);
+        ctx.fillText(fullLabel, midX, midY);
       }
 
       ctx.restore();
@@ -773,21 +801,33 @@ class CanvasEngine {
     const isUltraLowLOD = this.viewport.zoom < 0.2;
     const isLowLOD = this.viewport.zoom < 0.45;
 
+    // 그룹 노드를 배경 박스로 동작하도록 먼저 렌더링
+    visibleNodes.sort((a, b) => (a.type === 'group' ? -1 : (b.type === 'group' ? 1 : 0)));
+
     for (let i = 0; i < visibleNodes.length; i++) {
       const node = visibleNodes[i];
       const isSelected = this.selectedNodeIds.has(node.id);
       const isHovered = this.hoveredNode && this.hoveredNode.id === node.id;
+      const isGroup = node.type === 'group';
 
       ctx.save();
 
-      // 고비용 shadowBlur 대신 가벼운 스트로크로 최적화
-      ctx.fillStyle = '#161f30';
-      ctx.strokeStyle = isSelected ? '#00f0ff' : (isHovered ? '#38bdf8' : '#334155');
-      ctx.lineWidth = isSelected ? 2.5 : 1.2;
+      if (isGroup) {
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+        ctx.strokeStyle = isSelected ? '#c084fc' : (isHovered ? '#d8b4fe' : 'rgba(168, 85, 247, 0.6)');
+        ctx.lineWidth = isSelected ? 3 : 2;
+        ctx.setLineDash([8, 6]);
+      } else {
+        ctx.fillStyle = '#161f30';
+        ctx.strokeStyle = isSelected ? '#00f0ff' : (isHovered ? '#38bdf8' : '#334155');
+        ctx.lineWidth = isSelected ? 2.5 : 1.2;
+        ctx.setLineDash([]);
+      }
 
-      this.roundRect(ctx, node.x, node.y, node.width, node.height, 10);
+      this.roundRect(ctx, node.x, node.y, node.width, node.height, isGroup ? 16 : 10);
       ctx.fill();
       ctx.stroke();
+      ctx.setLineDash([]);
 
       if (isUltraLowLOD) {
         ctx.restore();
@@ -797,7 +837,7 @@ class CanvasEngine {
       // 노드 헤더
       const headerHeight = 36;
       ctx.fillStyle = this.getNodeCategoryColor(node.category);
-      this.roundRect(ctx, node.x, node.y, node.width, headerHeight, [10, 10, 0, 0]);
+      this.roundRect(ctx, node.x, node.y, node.width, headerHeight, [isGroup ? 16 : 10, isGroup ? 16 : 10, 0, 0]);
       ctx.fill();
 
       // 타이틀
@@ -904,6 +944,64 @@ class CanvasEngine {
           ctx.textAlign = 'left';
           rowY += 18;
         });
+        break;
+      }
+
+      case 'group': {
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillStyle = '#c084fc';
+        ctx.textAlign = 'left';
+        ctx.fillText('🔲 그룹 묶음 구역', node.x + padding, contentY + 10);
+
+        ctx.font = '11px sans-serif';
+        ctx.fillStyle = '#94a3b8';
+        const desc = this.truncateText(ctx, node.description || '하위 노드들을 배치하여 그룹화하세요.', availableWidth);
+        ctx.fillText(desc, node.x + padding, contentY + 30);
+        break;
+      }
+
+      case 'image': {
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillStyle = '#38bdf8';
+        ctx.textAlign = 'left';
+        ctx.fillText('🖼️ 삽입된 그림 파일', node.x + padding, contentY + 10);
+
+        ctx.fillStyle = '#1e293b';
+        ctx.strokeStyle = '#334155';
+        this.roundRect(ctx, node.x + padding, contentY + 22, availableWidth, Math.max(40, node.height - 80), 6);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.font = '11px sans-serif';
+        ctx.fillStyle = '#64748b';
+        ctx.textAlign = 'center';
+        ctx.fillText('(3D 공간 모드에서 전체 그림 표시)', node.x + node.width / 2, contentY + 45);
+
+        if (node.description) {
+          ctx.fillStyle = '#94a3b8';
+          ctx.textAlign = 'left';
+          const desc = this.truncateText(ctx, node.description, availableWidth);
+          ctx.fillText(desc, node.x + padding, contentY + Math.max(40, node.height - 80) + 36);
+        }
+        break;
+      }
+
+      case 'document': {
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillStyle = '#10b981';
+        ctx.textAlign = 'left';
+        ctx.fillText('📄 첨부 문서 파일', node.x + padding, contentY + 10);
+
+        const fileName = (node.data && node.data.fileName) || node.title || 'document.pdf';
+        ctx.font = '11px monospace';
+        ctx.fillStyle = '#38bdf8';
+        const truncatedFileName = this.truncateText(ctx, `📎 ${fileName}`, availableWidth);
+        ctx.fillText(truncatedFileName, node.x + padding, contentY + 32);
+
+        ctx.font = '10px sans-serif';
+        ctx.fillStyle = '#94a3b8';
+        const desc = this.truncateText(ctx, node.description || '첨부 문서', availableWidth);
+        ctx.fillText(desc, node.x + padding, contentY + 52);
         break;
       }
 

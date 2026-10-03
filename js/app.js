@@ -92,6 +92,12 @@ class ProjectMapApp {
     this.aiChatResponseEl = document.getElementById('ai-chat-response');
     this.aiPromptInputEl = document.getElementById('ai-prompt-input');
     this.aiSendBtnEl = document.getElementById('ai-send-btn');
+
+    // 파일 관리 및 미디어 모달
+    this.fileManageModalEl = document.getElementById('file-manage-modal');
+    this.mediaInsertModalEl = document.getElementById('media-insert-modal');
+    this.nodeClipboard = null;
+    this.tempUploadedMediaData = null;
   }
 
   initEngines() {
@@ -377,16 +383,30 @@ class ProjectMapApp {
 
   // 노드 추가
   createNode(type = 'standard') {
+    // 🖼️ 이미지 또는 📄 문서 노드는 미디어 모달을 통해 파일/URL을 받아 생성
+    if (type === 'image' || type === 'document') {
+      this.openMediaInsertModal(type);
+      return;
+    }
+
     const currentBoard = this.drillDown.getCurrentBoard();
     const id = `node_${Date.now()}`;
 
     let category = 'core';
     let title = '신규 시스템 노드';
+    let width = 320;
     let height = 180;
     let data = {};
 
+    // 🔲 그룹 묶음 구역
+    if (type === 'group') {
+      category = 'strategy';
+      title = '🔲 그룹 묶음 구역';
+      width = 580;
+      height = 360;
+      data = { note: '하위 모듈들을 포괄하는 영역' };
     // 📋 1. 기획 & 플래닝 노드군
-    if (type === 'goal') {
+    } else if (type === 'goal') {
       category = 'goal';
       title = '🎯 2026 핵심 비전 & 마일스톤';
       height = 190;
@@ -442,14 +462,14 @@ class ProjectMapApp {
       id: id,
       type: type,
       title: title,
-      description: '새로운 시스템 컴포넌트 사양',
+      description: type === 'group' ? '관련 노드들을 한곳에 묶어 관리하는 그룹 구역입니다.' : '새로운 시스템 컴포넌트 사양',
       category: category,
       status: 'planned',
-      tags: ['new'],
+      tags: [type],
       x: 300 + Math.random() * 200,
       y: 200 + Math.random() * 200,
       z: layerInfo.z,
-      width: 320,
+      width: width,
       height: height,
       sub_board_id: null,
       data: data
@@ -458,7 +478,7 @@ class ProjectMapApp {
     currentBoard.nodes.push(newNode);
     this.syncActiveBoard();
     this.triggerAutoSave();
-    this.showToast('새 노드가 생성되었습니다');
+    this.showToast(`새 [${title}] 노드가 생성되었습니다`);
   }
 
   deleteSelectedNode() {
@@ -603,6 +623,27 @@ class ProjectMapApp {
     }
     if (this.editEdgeLabelEl) {
       setTimeout(() => this.editEdgeLabelEl.focus(), 150);
+    }
+  }
+
+  handleEdgeRelationTypeChange(style) {
+    if (!this.editEdgeColorEl) return;
+    switch (style) {
+      case 'hierarchy':
+        this.editEdgeColorEl.value = '#f59e0b'; // 앰버 골드
+        break;
+      case 'peer':
+        this.editEdgeColorEl.value = '#10b981'; // 에메랄드 그린
+        break;
+      case 'sequence':
+        this.editEdgeColorEl.value = '#6366f1'; // 인디고 퍼플
+        break;
+      case 'solid':
+        this.editEdgeColorEl.value = '#38bdf8'; // 시안 블루
+        break;
+      case 'dotted':
+        this.editEdgeColorEl.value = '#94a3b8'; // 슬레이트
+        break;
     }
   }
 
@@ -1080,6 +1121,10 @@ class ProjectMapApp {
       } else if (e.ctrlKey && e.key.toLowerCase() === 'a') {
         e.preventDefault();
         this.openAiChatModal();
+      } else if (e.ctrlKey && e.key.toLowerCase() === 'c') {
+        this.copySelectedNodes();
+      } else if (e.ctrlKey && e.key.toLowerCase() === 'v') {
+        this.pasteNodes();
       }
 
       // 3D 전용 카메라 프리셋 단축키
@@ -1117,6 +1162,8 @@ class ProjectMapApp {
         this.closeTabletModal();
         this.closeNodeEditModal();
         this.closeEdgeEditModal();
+        this.closeFileManageModal();
+        this.closeMediaInsertModal();
         this.cancelConnecting();
       }
     });
@@ -1147,6 +1194,419 @@ class ProjectMapApp {
   closeTabletModal() {
     const modal = document.getElementById('tablet-modal');
     if (modal) modal.classList.remove('active');
+  }
+
+  // ========================================================
+  // 📂 파일 파이프라인 (내보내기 / 불러오기 / 이어 붙이기 / 분할)
+  // ========================================================
+  openFileManageModal() {
+    const modal = document.getElementById('file-manage-modal');
+    if (modal) modal.classList.add('active');
+  }
+
+  closeFileManageModal() {
+    const modal = document.getElementById('file-manage-modal');
+    if (modal) modal.classList.remove('active');
+  }
+
+  exportProjectJson() {
+    const jsonStr = JSON.stringify(this.projectData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ProjectMap_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    this.showToast('📤 전체 프로젝트 JSON 내보내기가 완료되었습니다.');
+  }
+
+  handleImportProjectFile(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!data.boards || !data.active_board_id) {
+          throw new Error('유효한 Project Map 파일 형식이 아닙니다.');
+        }
+        if (!confirm('현재 프로젝트 내용이 불러온 파일로 대체됩니다. 계속하시겠습니까?')) {
+          event.target.value = '';
+          return;
+        }
+        this.projectData = data;
+        this.drillDown.projectData = data;
+        this.drillDown.boardHistory = [data.active_board_id];
+        this.syncActiveBoard();
+        this.triggerAutoSave();
+        this.closeFileManageModal();
+        this.showToast('📥 프로젝트 파일 불러오기 성공!');
+      } catch (err) {
+        alert('파일 불러오기 실패: ' + err.message);
+      }
+      event.target.value = '';
+    };
+    reader.readAsText(file);
+  }
+
+  handleMergeProjectFile(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const incomingData = JSON.parse(e.target.result);
+        const currentBoard = this.drillDown.getCurrentBoard();
+        
+        let incomingNodes = [];
+        let incomingEdges = [];
+
+        if (incomingData.boards) {
+          const incBoardId = incomingData.active_board_id || Object.keys(incomingData.boards)[0];
+          const incBoard = incomingData.boards[incBoardId];
+          if (incBoard) {
+            incomingNodes = incBoard.nodes || [];
+            incomingEdges = incBoard.edges || [];
+          }
+        } else if (Array.isArray(incomingData.nodes)) {
+          incomingNodes = incomingData.nodes;
+          incomingEdges = incomingData.edges || [];
+        }
+
+        if (incomingNodes.length === 0) {
+          this.showToast('이어 붙일 노드 데이터가 없습니다.');
+          event.target.value = '';
+          return;
+        }
+
+        const prefix = `m_${Date.now().toString(36)}_`;
+        const idMap = new Map();
+        const mergedNodes = [];
+
+        incomingNodes.forEach(node => {
+          const newId = `${prefix}${node.id}`;
+          idMap.set(node.id, newId);
+          const cloned = JSON.parse(JSON.stringify(node));
+          cloned.id = newId;
+          cloned.x = (cloned.x || 100) + 120;
+          cloned.y = (cloned.y || 100) + 120;
+          mergedNodes.push(cloned);
+        });
+
+        const mergedEdges = [];
+        incomingEdges.forEach(edge => {
+          if (idMap.has(edge.from) && idMap.has(edge.to)) {
+            const clonedEdge = JSON.parse(JSON.stringify(edge));
+            clonedEdge.id = `${prefix}${edge.id}`;
+            clonedEdge.from = idMap.get(edge.from);
+            clonedEdge.to = idMap.get(edge.to);
+            mergedEdges.push(clonedEdge);
+          }
+        });
+
+        currentBoard.nodes.push(...mergedNodes);
+        currentBoard.edges.push(...mergedEdges);
+
+        this.syncActiveBoard();
+        this.triggerAutoSave();
+        this.closeFileManageModal();
+        this.showToast(`🔗 외부 파일에서 ${mergedNodes.length}개 노드와 ${mergedEdges.length}개 라인을 성공적으로 이어 붙였습니다!`);
+      } catch (err) {
+        alert('파일 이어 붙이기 실패: ' + err.message);
+      }
+      event.target.value = '';
+    };
+    reader.readAsText(file);
+  }
+
+  splitSelectedNodesToSubBoard() {
+    const currentBoard = this.drillDown.getCurrentBoard();
+    let selectedNodes = [];
+
+    if (this.is3DMode) {
+      if (this.engine3D.selectedNodeId) {
+        const n = currentBoard.nodes.find(nd => nd.id === this.engine3D.selectedNodeId);
+        if (n) selectedNodes.push(n);
+      }
+    } else {
+      if (this.engine2D.selectedNodeIds.size > 0) {
+        selectedNodes = currentBoard.nodes.filter(nd => this.engine2D.selectedNodeIds.has(nd.id));
+      }
+    }
+
+    if (selectedNodes.length === 0) {
+      alert('분할 추출할 노드를 먼저 1개 이상 선택하세요.');
+      return;
+    }
+
+    const nameInput = document.getElementById('split-subboard-name');
+    let subBoardName = nameInput && nameInput.value.trim() ? nameInput.value.trim() : `분할 서브 보드 (${new Date().toLocaleTimeString()})`;
+
+    const subBoardId = `board_${Date.now()}`;
+    const selectedIds = new Set(selectedNodes.map(n => n.id));
+
+    // 서브보드로 옮길 내부 엣지
+    const movedEdges = currentBoard.edges.filter(e => selectedIds.has(e.from) && selectedIds.has(e.to));
+
+    // 새 서브 보드 등록
+    this.projectData.boards[subBoardId] = {
+      id: subBoardId,
+      name: subBoardName,
+      parent_board_id: this.drillDown.getCurrentBoardId(),
+      viewport: { x: 0, y: 0, zoom: 1.0 },
+      nodes: JSON.parse(JSON.stringify(selectedNodes)),
+      edges: JSON.parse(JSON.stringify(movedEdges))
+    };
+
+    // 현재 보드에서 선택된 노드 및 내부 엣지 제거
+    currentBoard.nodes = currentBoard.nodes.filter(n => !selectedIds.has(n.id));
+    currentBoard.edges = currentBoard.edges.filter(e => !selectedIds.has(e.from) || !selectedIds.has(e.to));
+
+    // 현재 보드에 서브보드로 연결되는 대표 노드 1개 생성
+    const repNodeId = `node_rep_${Date.now()}`;
+    const repNode = {
+      id: repNodeId,
+      type: 'standard',
+      title: `📦 ${subBoardName}`,
+      description: `[분할 추출된 모듈군] 더블클릭하여 ${selectedNodes.length}개 하위 노드 탐색`,
+      category: 'core',
+      status: 'active',
+      tags: ['sub-board', 'split'],
+      x: selectedNodes[0].x || 300,
+      y: selectedNodes[0].y || 200,
+      z: selectedNodes[0].z || 0,
+      width: 340,
+      height: 180,
+      sub_board_id: subBoardId,
+      data: { node_count: selectedNodes.length }
+    };
+    currentBoard.nodes.push(repNode);
+
+    if (nameInput) nameInput.value = '';
+    this.syncActiveBoard();
+    this.triggerAutoSave();
+    this.closeFileManageModal();
+    this.showToast(`✂️ ${selectedNodes.length}개 노드를 '${subBoardName}' 서브보드로 분할 추출 완료!`);
+  }
+
+  // ========================================================
+  // 🖼️ 그림 및 📄 문서 파일 캔버스 삽입
+  // ========================================================
+  openMediaInsertModal(type = 'image') {
+    const modal = document.getElementById('media-insert-modal');
+    if (!modal) return;
+
+    this.tempUploadedMediaData = null;
+    const typeInput = document.getElementById('media-insert-type');
+    const titleInput = document.getElementById('media-insert-title');
+    const urlInput = document.getElementById('media-insert-url');
+    const descInput = document.getElementById('media-insert-desc');
+    const modalTitle = document.getElementById('media-insert-modal-title');
+    const fileInput = document.getElementById('media-file-input');
+
+    if (typeInput) typeInput.value = type;
+    if (fileInput) {
+      fileInput.value = '';
+      fileInput.accept = type === 'image' ? 'image/*' : '.pdf,.doc,.docx,.txt,.md,.json,.zip';
+    }
+    if (modalTitle) {
+      modalTitle.textContent = type === 'image' ? '🖼️ 그림(이미지) 파일 캔버스 삽입' : '📄 문서 파일 캔버스 첨부';
+    }
+    if (titleInput) titleInput.value = type === 'image' ? '새 그림 다이어그램' : '새 첨부 문서';
+    if (urlInput) urlInput.value = '';
+    if (descInput) descInput.value = '';
+
+    modal.classList.add('active');
+  }
+
+  closeMediaInsertModal() {
+    const modal = document.getElementById('media-insert-modal');
+    if (modal) modal.classList.remove('active');
+    this.tempUploadedMediaData = null;
+  }
+
+  handleMediaFileSelected(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      this.tempUploadedMediaData = {
+        dataUrl: e.target.result,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type
+      };
+
+      const titleInput = document.getElementById('media-insert-title');
+      if (titleInput && (!titleInput.value || titleInput.value.startsWith('새 '))) {
+        titleInput.value = file.name;
+      }
+      this.showToast(`📎 파일 준비 완료: ${file.name}`);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  confirmMediaInsert() {
+    const typeInput = document.getElementById('media-insert-type');
+    const titleInput = document.getElementById('media-insert-title');
+    const urlInput = document.getElementById('media-insert-url');
+    const descInput = document.getElementById('media-insert-desc');
+
+    const type = typeInput ? typeInput.value : 'image';
+    const title = titleInput && titleInput.value.trim() ? titleInput.value.trim() : (type === 'image' ? '그림 파일' : '문서 파일');
+    const desc = descInput ? descInput.value.trim() : '';
+
+    let mediaUrl = '';
+    let fileName = '';
+
+    if (this.tempUploadedMediaData) {
+      mediaUrl = this.tempUploadedMediaData.dataUrl;
+      fileName = this.tempUploadedMediaData.fileName;
+    } else if (urlInput && urlInput.value.trim()) {
+      mediaUrl = urlInput.value.trim();
+      fileName = mediaUrl.split('/').pop() || 'file';
+    }
+
+    if (!mediaUrl) {
+      alert('로컬 파일을 업로드하거나 유효한 파일 URL을 입력해주세요.');
+      return;
+    }
+
+    const currentBoard = this.drillDown.getCurrentBoard();
+    const id = `node_${Date.now()}`;
+    const category = type === 'image' ? 'idea' : 'task';
+    const layerInfo = this.engine3D.layers[category] || { z: 0 };
+
+    const newNode = {
+      id: id,
+      type: type,
+      title: (type === 'image' ? '🖼️ ' : '📄 ') + title,
+      description: desc,
+      category: category,
+      status: 'active',
+      tags: [type, 'media'],
+      x: 350 + Math.random() * 150,
+      y: 250 + Math.random() * 150,
+      z: layerInfo.z,
+      width: type === 'image' ? 340 : 320,
+      height: type === 'image' ? 260 : 180,
+      sub_board_id: null,
+      data: {
+        url: mediaUrl,
+        fileName: fileName,
+        fileSize: this.tempUploadedMediaData ? this.tempUploadedMediaData.fileSize : null
+      }
+    };
+
+    currentBoard.nodes.push(newNode);
+    this.closeMediaInsertModal();
+    this.syncActiveBoard();
+    this.triggerAutoSave();
+    this.showToast(`📌 [${newNode.title}] 캔버스에 삽입 완료!`);
+  }
+
+  // ========================================================
+  // 📋 복사 / 붙여넣기 (Copy & Paste)
+  // ========================================================
+  copySelectedNodes() {
+    const currentBoard = this.drillDown.getCurrentBoard();
+    let targetNodes = [];
+    if (this.is3DMode) {
+      if (this.engine3D.selectedNodeId) {
+        const n = currentBoard.nodes.find(nd => nd.id === this.engine3D.selectedNodeId);
+        if (n) targetNodes.push(n);
+      }
+    } else {
+      if (this.engine2D.selectedNodeIds.size > 0) {
+        targetNodes = currentBoard.nodes.filter(nd => this.engine2D.selectedNodeIds.has(nd.id));
+      }
+    }
+
+    if (targetNodes.length === 0) {
+      this.showToast('복사할 노드를 먼저 선택하세요');
+      return;
+    }
+
+    const nodeIds = new Set(targetNodes.map(n => n.id));
+    const internalEdges = currentBoard.edges.filter(e => nodeIds.has(e.from) && nodeIds.has(e.to));
+
+    this.nodeClipboard = {
+      nodes: JSON.parse(JSON.stringify(targetNodes)),
+      edges: JSON.parse(JSON.stringify(internalEdges))
+    };
+
+    try {
+      navigator.clipboard.writeText(JSON.stringify(this.nodeClipboard, null, 2));
+    } catch (e) {}
+
+    this.showToast(`📋 ${targetNodes.length}개 노드 복사 완료 (Ctrl+V로 붙여넣기)`);
+  }
+
+  pasteNodes() {
+    if (!this.nodeClipboard || !this.nodeClipboard.nodes || this.nodeClipboard.nodes.length === 0) {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        navigator.clipboard.readText().then(text => {
+          try {
+            const parsed = JSON.parse(text);
+            if (parsed.nodes && Array.isArray(parsed.nodes)) {
+              this.nodeClipboard = parsed;
+              this.executePaste();
+            } else {
+              this.showToast('클립보드에 붙여넣을 노드 데이터가 없습니다');
+            }
+          } catch (e) {
+            this.showToast('클립보드에 붙여넣을 노드 데이터가 없습니다');
+          }
+        }).catch(() => {
+          this.showToast('클립보드에 붙여넣을 노드 데이터가 없습니다');
+        });
+        return;
+      }
+      this.showToast('클립보드에 붙여넣을 노드 데이터가 없습니다');
+      return;
+    }
+    this.executePaste();
+  }
+
+  executePaste() {
+    const currentBoard = this.drillDown.getCurrentBoard();
+    const idMap = new Map();
+    const newNodes = [];
+    const timestamp = Date.now();
+
+    this.nodeClipboard.nodes.forEach((oldNode, idx) => {
+      const newId = `node_${timestamp}_${idx}`;
+      idMap.set(oldNode.id, newId);
+      const cloned = JSON.parse(JSON.stringify(oldNode));
+      cloned.id = newId;
+      cloned.x = (cloned.x || 200) + 40;
+      cloned.y = (cloned.y || 200) + 40;
+      newNodes.push(cloned);
+    });
+
+    const newEdges = [];
+    (this.nodeClipboard.edges || []).forEach((oldEdge, idx) => {
+      if (idMap.has(oldEdge.from) && idMap.has(oldEdge.to)) {
+        const clonedEdge = JSON.parse(JSON.stringify(oldEdge));
+        clonedEdge.id = `edge_${timestamp}_${idx}`;
+        clonedEdge.from = idMap.get(oldEdge.from);
+        clonedEdge.to = idMap.get(oldEdge.to);
+        newEdges.push(clonedEdge);
+      }
+    });
+
+    currentBoard.nodes.push(...newNodes);
+    currentBoard.edges.push(...newEdges);
+
+    this.syncActiveBoard();
+    this.triggerAutoSave();
+    this.showToast(`📌 ${newNodes.length}개 노드 붙여넣기 완료!`);
   }
 
   // 소스코드 GitHub 원클릭 푸시
