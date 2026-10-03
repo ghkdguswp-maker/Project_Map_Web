@@ -668,11 +668,12 @@ class Canvas3DEngine {
   flyToNode(node) {
     if (!node) return;
     const targetPos = new THREE.Vector3(node.x + node.width / 2, node.y + node.height / 2, node.z || 0);
-    // 정면에서 쳐다보도록 카메라 배치
-    const cameraOffset = new THREE.Vector3(0, -550, 200);
+    // 🎯 정면에서 노드를 편안하게 직시하도록 Z축 전면 카메라 배치
+    const dist = Math.max(750, Math.max(node.width || 260, node.height || 200) * 1.8);
+    const cameraOffset = new THREE.Vector3(0, 0, dist);
     const cameraTargetPos = new THREE.Vector3().addVectors(targetPos, cameraOffset);
 
-    this.animateCamera(cameraTargetPos, targetPos, 1000);
+    this.animateCamera(cameraTargetPos, targetPos, 800);
   }
 
   // 카메라 시점 프리셋
