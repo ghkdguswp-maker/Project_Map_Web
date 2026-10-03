@@ -45,6 +45,15 @@ class Canvas3DEngine {
     this.edgeParticles = [];
     this.edgeLabels = [];
 
+    // 🎯 3D 노드 드래그 이동 시스템
+    this.raycaster = new THREE.Raycaster();
+    this.dragPlane = new THREE.Plane();
+    this.dragOffset = new THREE.Vector3();
+    this.draggingNode = null;
+    this.isDraggingNode = false;
+    this.dragStartScreen = { x: 0, y: 0 };
+    this.hasMovedDrag = false;
+
     // 콜백들
     this.onNodeClick = null;
     this.onNodeDoubleClick = null;
@@ -159,6 +168,122 @@ class Canvas3DEngine {
 
     // 마우스 우클릭 기본 방지
     this.cssRenderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+    // 🎯 전역 3D 노드 드래그 리스너 (마우스 & 터치)
+    window.addEventListener('mousemove', (e) => {
+      if (this.isDraggingNode) {
+        this.onNodeDragMove(e.clientX, e.clientY);
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (this.isDraggingNode) {
+        this.endNodeDrag();
+      }
+    });
+
+    window.addEventListener('touchmove', (e) => {
+      if (this.isDraggingNode && e.touches.length === 1) {
+        this.onNodeDragMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: false });
+
+    window.addEventListener('touchend', () => {
+      if (this.isDraggingNode) {
+        this.endNodeDrag();
+      }
+    });
+  }
+
+  // 🎯 3D 노드 드래그 시작
+  startNodeDrag(node, clientX, clientY) {
+    if (!node) return;
+    this.draggingNode = node;
+    this.hasMovedDrag = false;
+    this.dragStartScreen = { x: clientX, y: clientY };
+
+    const rect = this.container.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+
+    this.raycaster.setFromCamera(mouse, this.camera);
+    const nodeZ = node.z !== undefined ? node.z : (this.layers[node.category]?.z || 0);
+    this.dragPlane.set(new THREE.Vector3(0, 0, 1), -nodeZ);
+
+    const intersectPoint = new THREE.Vector3();
+    if (this.raycaster.ray.intersectPlane(this.dragPlane, intersectPoint)) {
+      const nodeCenterX = node.x + node.width / 2;
+      const nodeCenterY = node.y + node.height / 2;
+      this.dragOffset.set(
+        nodeCenterX - intersectPoint.x,
+        nodeCenterY - intersectPoint.y,
+        0
+      );
+      this.isDraggingNode = true;
+      this.controls.enabled = false; // OrbitControls 일시 정지하여 노드만 드래그
+    }
+  }
+
+  // 🎯 3D 노드 드래그 중
+  onNodeDragMove(clientX, clientY) {
+    if (!this.isDraggingNode || !this.draggingNode) return;
+
+    const dist = Math.hypot(clientX - this.dragStartScreen.x, clientY - this.dragStartScreen.y);
+    if (dist > 5) {
+      this.hasMovedDrag = true;
+      document.body.style.cursor = 'grabbing';
+    }
+
+    if (!this.hasMovedDrag) return;
+
+    const rect = this.container.getBoundingClientRect();
+    const mouse = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    );
+
+    this.raycaster.setFromCamera(mouse, this.camera);
+    const intersectPoint = new THREE.Vector3();
+
+    if (this.raycaster.ray.intersectPlane(this.dragPlane, intersectPoint)) {
+      const newCenterX = intersectPoint.x + this.dragOffset.x;
+      const newCenterY = intersectPoint.y + this.dragOffset.y;
+
+      this.draggingNode.x = newCenterX - this.draggingNode.width / 2;
+      this.draggingNode.y = newCenterY - this.draggingNode.height / 2;
+
+      // 3D CSS3DObject 위치 동기화
+      const cssObject = this.cssObjects.get(this.draggingNode.id);
+      if (cssObject) {
+        cssObject.position.set(newCenterX, newCenterY, this.draggingNode.z || 0);
+      }
+
+      // 연결된 3D 튜브 라인(엣지) 및 라벨 실시간 갱신
+      this.build3DEdges();
+    }
+  }
+
+  // 🎯 3D 노드 드래그 종료
+  endNodeDrag() {
+    if (this.isDraggingNode) {
+      const wasMoved = this.hasMovedDrag;
+      this.isDraggingNode = false;
+      this.draggingNode = null;
+      this.hasMovedDrag = false;
+      this.controls.enabled = true; // OrbitControls 복원
+      document.body.style.cursor = 'default';
+
+      if (wasMoved) {
+        if (this.onDataChange) {
+          this.onDataChange('node_position');
+        }
+        if (window.app && window.app.triggerAutoSave) {
+          window.app.triggerAutoSave();
+        }
+      }
+    }
   }
 
   onWindowResize() {
@@ -280,61 +405,81 @@ class Canvas3DEngine {
       </div>
     `;
 
-    // 롱 프레스 (Long Press - 450ms 꾹 누르기 감지)
+    // 🎯 롱 프레스 & 3D 드래그 인터랙션
     let pressTimer = null;
     let isLongPressTriggered = false;
+    let touchStartX = 0;
+    let touchStartY = 0;
 
     const onTouchStart = (e) => {
-      // 연결 모드 중이면 타겟 노드로 지정하여 즉시 연결
       if (window.app && window.app.isConnectingMode) {
         window.app.completeConnecting(node.id);
         return;
       }
 
+      const touch = e.touches ? e.touches[0] : e;
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
       isLongPressTriggered = false;
+
+      // 🎯 3D 노드 드래그 시작
+      this.startNodeDrag(node, touch.clientX, touch.clientY);
+
       el.classList.add('pressing');
       pressTimer = setTimeout(() => {
-        isLongPressTriggered = true;
-        el.classList.remove('pressing');
-        if (navigator.vibrate) navigator.vibrate(60);
-        this.selectNode(node.id);
-        window.app.openNodeEditModalFor(node.id);
+        // 이동하지 않고 가만히 꾹 누르고 있을 때만 롱프레스 수정 모달 오픈
+        if (!this.hasMovedDrag) {
+          isLongPressTriggered = true;
+          el.classList.remove('pressing');
+          if (navigator.vibrate) navigator.vibrate(60);
+          this.endNodeDrag(); // 드래그 중단
+          this.selectNode(node.id);
+          window.app.openNodeEditModalFor(node.id);
+        }
       }, 450);
     };
 
-    const onTouchCancel = () => {
+    const onTouchMove = (e) => {
+      const touch = e.touches ? e.touches[0] : e;
+      const dist = Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY);
+      // 손가락이나 마우스가 움직이면 롱프레스 취소
+      if (dist > 6) {
+        el.classList.remove('pressing');
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+      }
+    };
+
+    const onTouchEnd = (e) => {
       el.classList.remove('pressing');
       if (pressTimer) {
         clearTimeout(pressTimer);
         pressTimer = null;
       }
-    };
-
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchCancel, { passive: true });
-    el.addEventListener('touchend', (e) => {
-      onTouchCancel();
-      if (!isLongPressTriggered) {
+      if (!isLongPressTriggered && !this.hasMovedDrag) {
         if (window.app && window.app.isConnectingMode) return;
         this.selectNode(node.id);
         if (this.onNodeClick) this.onNodeClick(node);
       }
-    });
+      this.endNodeDrag();
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: true });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
 
     // 마우스 이벤트 바인딩
     el.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // 마우스 좌클릭만 처리
       e.stopPropagation();
-      if (window.app && window.app.isConnectingMode) {
-        window.app.completeConnecting(node.id);
-        return;
-      }
       onTouchStart(e);
       this.selectNode(node.id);
-      if (this.onNodeClick) this.onNodeClick(node);
     });
 
-    el.addEventListener('mousemove', onTouchCancel);
-    el.addEventListener('mouseup', onTouchCancel);
+    el.addEventListener('mousemove', onTouchMove);
+    el.addEventListener('mouseup', onTouchEnd);
 
     el.addEventListener('dblclick', (e) => {
       e.stopPropagation();
