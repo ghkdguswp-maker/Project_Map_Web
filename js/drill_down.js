@@ -122,23 +122,27 @@ class DrillDownManager {
 
       const backBtn = document.createElement('button');
       backBtn.className = 'btn';
-      backBtn.style.padding = '2px 8px';
+      backBtn.style.padding = '0 8px';
+      backBtn.style.height = '28px';
       backBtn.style.fontSize = '11px';
-      backBtn.style.background = 'rgba(30, 41, 59, 0.8)';
+      backBtn.style.background = 'rgba(30, 41, 59, 0.85)';
       backBtn.style.borderColor = '#475569';
-      backBtn.innerHTML = '⬆️ 상위로';
+      backBtn.style.whiteSpace = 'nowrap';
+      backBtn.innerHTML = '⬆️ 상위';
       backBtn.title = '상위 보드로 이동';
       backBtn.onclick = () => this.navigateBack();
       btnGroup.appendChild(backBtn);
 
       const delBtn = document.createElement('button');
       delBtn.className = 'btn btn-danger';
-      delBtn.style.padding = '2px 8px';
+      delBtn.style.padding = '0 8px';
+      delBtn.style.height = '28px';
       delBtn.style.fontSize = '11px';
       delBtn.style.background = 'rgba(239, 68, 68, 0.2)';
       delBtn.style.borderColor = 'rgba(239, 68, 68, 0.5)';
       delBtn.style.color = '#f87171';
-      delBtn.innerHTML = '🗑️ 이 폴더 삭제';
+      delBtn.style.whiteSpace = 'nowrap';
+      delBtn.innerHTML = '🗑️ 폴더 삭제';
       delBtn.title = '현재 하위 캔버스(폴더) 영구 삭제';
       delBtn.onclick = () => {
         if (window.app && window.app.deleteBoardById) {
