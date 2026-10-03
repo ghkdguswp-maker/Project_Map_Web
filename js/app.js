@@ -178,25 +178,104 @@ class ProjectMapApp {
     this.renderProjectSidebar();
   }
 
+  // 🛑 통합 커스텀 확인/입력 대화상자 (모바일/웹/PySide 완벽 호환)
+  showConfirmModal(opts, onConfirm) {
+    const modal = document.getElementById('confirm-modal');
+    if (!modal) {
+      if (confirm(opts.message || '진행하시겠습니까?')) {
+        if (onConfirm) onConfirm('');
+      }
+      return;
+    }
+
+    const titleEl = document.getElementById('confirm-modal-title');
+    const iconEl = document.getElementById('confirm-modal-icon');
+    const msgEl = document.getElementById('confirm-modal-message');
+    const inputEl = document.getElementById('confirm-modal-input');
+    const okBtn = document.getElementById('confirm-modal-btn-ok');
+    const cancelBtn = document.getElementById('confirm-modal-btn-cancel');
+
+    if (titleEl) titleEl.textContent = opts.title || '확인';
+    if (iconEl) iconEl.textContent = opts.icon || '⚠️';
+    if (msgEl) msgEl.textContent = opts.message || '';
+
+    if (inputEl) {
+      if (opts.showInput) {
+        inputEl.style.display = 'block';
+        inputEl.value = opts.inputValue || '';
+        inputEl.placeholder = opts.inputPlaceholder || '';
+        setTimeout(() => inputEl.focus(), 50);
+      } else {
+        inputEl.style.display = 'none';
+      }
+    }
+
+    if (okBtn) {
+      okBtn.textContent = opts.okText || '확인';
+      if (opts.isDanger) {
+        okBtn.className = 'btn btn-danger';
+        okBtn.style.background = '#ef4444';
+        okBtn.style.borderColor = '#ef4444';
+      } else {
+        okBtn.className = 'btn btn-primary';
+        okBtn.style.background = '#0284c7';
+        okBtn.style.borderColor = '#38bdf8';
+      }
+    }
+
+    if (cancelBtn) {
+      cancelBtn.textContent = opts.cancelText || '취소';
+    }
+
+    this._confirmCallback = onConfirm;
+    modal.classList.add('active');
+  }
+
+  closeConfirmModal(isConfirmed) {
+    const modal = document.getElementById('confirm-modal');
+    if (modal) modal.classList.remove('active');
+
+    const inputEl = document.getElementById('confirm-modal-input');
+    const val = inputEl ? inputEl.value : '';
+
+    if (isConfirmed && this._confirmCallback) {
+      const cb = this._confirmCallback;
+      this._confirmCallback = null;
+      cb(val);
+    } else {
+      this._confirmCallback = null;
+    }
+  }
+
   // 📂 신규 하위 보드 생성 프롬프트
   createSubBoardPrompt() {
-    const boardName = prompt('새로운 하위 캔버스 보드 이름을 입력하세요:', '신규 서브 보드');
-    if (!boardName || !boardName.trim()) return;
+    this.showConfirmModal({
+      title: '📁 새 하위 캔버스(보드) 생성',
+      icon: '📁',
+      message: '생성할 새로운 하위 캔버스 보드 이름을 입력하세요:',
+      showInput: true,
+      inputValue: '신규 서브 보드',
+      inputPlaceholder: '보드 이름',
+      okText: '생성',
+      isDanger: false
+    }, (boardName) => {
+      if (!boardName || !boardName.trim()) return;
 
-    const newBoardId = `board_${Date.now()}`;
-    this.projectData.boards[newBoardId] = {
-      id: newBoardId,
-      parent_id: this.drillDown.getCurrentBoardId(),
-      title: boardName.trim(),
-      viewport: { x: 0, y: 0, zoom: 1.0 },
-      nodes: [],
-      edges: []
-    };
+      const newBoardId = `board_${Date.now()}`;
+      this.projectData.boards[newBoardId] = {
+        id: newBoardId,
+        parent_id: this.drillDown.getCurrentBoardId(),
+        title: boardName.trim(),
+        viewport: { x: 0, y: 0, zoom: 1.0 },
+        nodes: [],
+        edges: []
+      };
 
-    this.drillDown.navigateToBoard(newBoardId);
-    this.syncActiveBoard();
-    this.triggerAutoSave();
-    this.showToast(`✨ 새로운 보드 [${boardName.trim()}]가 생성되었습니다.`);
+      this.drillDown.navigateToBoard(newBoardId);
+      this.syncActiveBoard();
+      this.triggerAutoSave();
+      this.showToast(`✨ 새로운 보드 [${boardName.trim()}]가 생성되었습니다.`);
+    });
   }
 
   initBridge() {
@@ -640,11 +719,13 @@ class ProjectMapApp {
       ? `정말 [${firstNode ? firstNode.title : '선택 노드'}] 노드를 삭제하시겠습니까?`
       : `선택한 ${targetIds.length}개 노드를 모두 영구 삭제하시겠습니까?`;
 
-    setTimeout(() => {
-      if (!confirm(promptMsg)) {
-        return;
-      }
-
+    this.showConfirmModal({
+      title: '🗑️ 선택 노드 영구 삭제',
+      icon: '🗑️',
+      message: promptMsg,
+      okText: '선택 노드 삭제',
+      isDanger: true
+    }, () => {
       // 연결된 하위 보드(sub_board_id)가 있는 경우 함께 정리
       targetIds.forEach(id => {
         const node = currentBoard.nodes.find(n => n.id === id);
@@ -668,7 +749,7 @@ class ProjectMapApp {
       this.syncActiveBoard();
       this.triggerAutoSave();
       this.showToast(`🗑️ ${targetIds.length}개 노드가 삭제되었습니다.`);
-    }, 10);
+    });
   }
 
   // ========================================================
@@ -1004,21 +1085,24 @@ class ProjectMapApp {
       }
     }
 
-    const nodeTitle = node ? node.title : '노드';
+    if (!node) {
+      this.showToast('⚠️ 삭제할 노드를 찾을 수 없습니다.');
+      return;
+    }
 
-    setTimeout(() => {
-      if (!confirm(`정말 [${nodeTitle}] 노드를 삭제하시겠습니까?`)) {
-        return;
-      }
+    const nodeTitle = node.title || '노드';
 
-      // 만약 이 노드에 연결된 하위 보드(sub_board_id)가 있다면 하위 보드도 정리할지 확인
-      if (node && node.sub_board_id && this.projectData.boards[node.sub_board_id]) {
-        const subBoard = this.projectData.boards[node.sub_board_id];
-        const subCount = subBoard.nodes ? subBoard.nodes.length : 0;
-        if (confirm(`이 노드에 연결된 하위 폴더([${subBoard.title || subBoard.name || '서브 보드'}], 노드 ${subCount}개)도 함께 삭제하시겠습니까?`)) {
-          delete this.projectData.boards[node.sub_board_id];
-          this.drillDown.historyStack = this.drillDown.historyStack.filter(id => id !== node.sub_board_id);
-        }
+    this.showConfirmModal({
+      title: '🗑️ 노드 영구 삭제',
+      icon: '🗑️',
+      message: `정말 [${nodeTitle}] 노드를 삭제하시겠습니까?\n연결된 파이프라인 선들도 함께 제거됩니다.`,
+      okText: '삭제 실행',
+      isDanger: true
+    }, () => {
+      // 만약 이 노드에 연결된 하위 보드(sub_board_id)가 있다면 함께 삭제
+      if (node.sub_board_id && this.projectData.boards[node.sub_board_id]) {
+        delete this.projectData.boards[node.sub_board_id];
+        this.drillDown.historyStack = this.drillDown.historyStack.filter(id => id !== node.sub_board_id);
       }
 
       targetBoard.nodes = targetBoard.nodes.filter(n => n.id !== nodeId);
@@ -1033,8 +1117,8 @@ class ProjectMapApp {
 
       this.syncActiveBoard();
       this.triggerAutoSave();
-      this.showToast(`🗑️ [${nodeTitle}] 노드가 삭제되었습니다.`);
-    }, 10);
+      this.showToast(`🗑️ [${nodeTitle}] 노드가 성공적으로 삭제되었습니다.`);
+    });
   }
 
   // 📁 폴더(하위 보드) 삭제
@@ -1046,21 +1130,23 @@ class ProjectMapApp {
 
     const board = this.projectData.boards[boardId];
     if (!board) {
-      this.showToast('⚠️ 삭제할 보드를 찾을 수 없습니다.');
+      this.showToast('⚠️ 삭제할 폴더/보드를 찾을 수 없습니다.');
       return;
     }
 
     const boardTitle = board.title || board.name || boardId;
     const nodeCount = board.nodes ? board.nodes.length : 0;
     const confirmMsg = nodeCount > 0 
-      ? `정말 [${boardTitle}] 폴더(보드)와 내부 ${nodeCount}개 노드를 모두 영구 삭제하시겠습니까?`
-      : `정말 [${boardTitle}] 폴더(보드)를 삭제하시겠습니까?`;
+      ? `정말 [${boardTitle}] 폴더(보드)를 삭제하시겠습니까?\n내부에 포함된 ${nodeCount}개의 하위 노드들도 영구히 삭제됩니다.`
+      : `정말 [${boardTitle}] 폴더(보드)를 영구 삭제하시겠습니까?`;
 
-    setTimeout(() => {
-      if (!confirm(confirmMsg)) {
-        return;
-      }
-
+    this.showConfirmModal({
+      title: '📁 폴더(하위 보드) 삭제',
+      icon: '📁',
+      message: confirmMsg,
+      okText: '폴더 삭제 실행',
+      isDanger: true
+    }, () => {
       // 1. 만약 현재 사용자가 이 보드(또는 그 하위 보드) 안에 있다면 부모 보드로 먼저 이동
       const currentId = this.drillDown.getCurrentBoardId();
       const isInsideOrDescendant = (checkId) => {
@@ -1117,7 +1203,7 @@ class ProjectMapApp {
       this.syncActiveBoard();
       this.triggerAutoSave();
       this.showToast(`🗑️ [${boardTitle}] 폴더(보드)가 성공적으로 삭제되었습니다.`);
-    }, 10);
+    });
   }
 
   // 모달 내부에서 현재 편집 노드 삭제
@@ -1452,6 +1538,7 @@ class ProjectMapApp {
         }
         this.deleteSelectedNode();
       } else if (e.key === 'Escape') {
+        this.closeConfirmModal(false);
         this.closeAiSpecModal();
         this.closeTabletModal();
         this.closeNodeEditModal();
@@ -1528,19 +1615,23 @@ class ProjectMapApp {
         if (!data.boards || !data.active_board_id) {
           throw new Error('유효한 Project Map 파일 형식이 아닙니다.');
         }
-        if (!confirm('현재 프로젝트 내용이 불러온 파일로 대체됩니다. 계속하시겠습니까?')) {
-          event.target.value = '';
-          return;
-        }
-        this.projectData = data;
-        this.drillDown.projectData = data;
-        this.drillDown.boardHistory = [data.active_board_id];
-        this.syncActiveBoard();
-        this.triggerAutoSave();
-        this.closeFileManageModal();
-        this.showToast('📥 프로젝트 파일 불러오기 성공!');
+        this.showConfirmModal({
+          title: '📥 프로젝트 파일 불러오기',
+          icon: '📥',
+          message: '현재 프로젝트 내용이 불러온 파일로 대체됩니다. 계속하시겠습니까?',
+          okText: '불러오기',
+          isDanger: true
+        }, () => {
+          this.projectData = data;
+          this.drillDown.projectData = data;
+          this.drillDown.boardHistory = [data.active_board_id];
+          this.syncActiveBoard();
+          this.triggerAutoSave();
+          this.closeFileManageModal();
+          this.showToast('📥 프로젝트 파일 불러오기 성공!');
+        });
       } catch (err) {
-        alert('파일 불러오기 실패: ' + err.message);
+        this.showToast('⚠️ 파일 불러오기 실패: ' + err.message);
       }
       event.target.value = '';
     };
