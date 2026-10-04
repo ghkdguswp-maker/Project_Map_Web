@@ -210,12 +210,28 @@ class Canvas3DEngine {
 
     this.raycaster.setFromCamera(mouse, this.camera);
     const nodeZ = node.z !== undefined ? node.z : (this.layers[node.category]?.z || 0);
-    this.dragPlane.set(new THREE.Vector3(0, 0, 1), -nodeZ);
+    const nodeCenterX = node.x + node.width / 2;
+    const nodeCenterY = node.y + node.height / 2;
+    const nodeCenter = new THREE.Vector3(nodeCenterX, nodeCenterY, nodeZ);
 
+    this.dragPlane.set(new THREE.Vector3(0, 0, 1), -nodeZ);
     const intersectPoint = new THREE.Vector3();
-    if (this.raycaster.ray.intersectPlane(this.dragPlane, intersectPoint)) {
-      const nodeCenterX = node.x + node.width / 2;
-      const nodeCenterY = node.y + node.height / 2;
+    let intersected = false;
+
+    // 1차: 노드가 위치한 층 평면 (XY 평면, Z = nodeZ)과 교차
+    if (Math.abs(this.raycaster.ray.direction.z) > 0.02) {
+      intersected = !!this.raycaster.ray.intersectPlane(this.dragPlane, intersectPoint);
+    }
+
+    // 2차: 극단적 수평 시야각일 경우 카메라 대면 평면으로 안전 폴백
+    if (!intersected) {
+      const camDir = new THREE.Vector3();
+      this.camera.getWorldDirection(camDir);
+      this.dragPlane.setFromNormalAndCoplanarPoint(camDir.negate(), nodeCenter);
+      intersected = !!this.raycaster.ray.intersectPlane(this.dragPlane, intersectPoint);
+    }
+
+    if (intersected) {
       this.dragOffset.set(
         nodeCenterX - intersectPoint.x,
         nodeCenterY - intersectPoint.y,
@@ -231,9 +247,13 @@ class Canvas3DEngine {
     if (!this.isDraggingNode || !this.draggingNode) return;
 
     const dist = Math.hypot(clientX - this.dragStartScreen.x, clientY - this.dragStartScreen.y);
-    if (dist > 5) {
+    if (dist > 4) {
       this.hasMovedDrag = true;
       document.body.style.cursor = 'grabbing';
+      if (this.currentPressTimer) {
+        clearTimeout(this.currentPressTimer);
+        this.currentPressTimer = null;
+      }
     }
 
     if (!this.hasMovedDrag) return;
@@ -253,11 +273,12 @@ class Canvas3DEngine {
 
       this.draggingNode.x = newCenterX - this.draggingNode.width / 2;
       this.draggingNode.y = newCenterY - this.draggingNode.height / 2;
+      const nodeZ = this.draggingNode.z !== undefined ? this.draggingNode.z : (this.layers[this.draggingNode.category]?.z || 0);
 
       // 3D CSS3DObject 위치 동기화
       const cssObject = this.cssObjects.get(this.draggingNode.id);
       if (cssObject) {
-        cssObject.position.set(newCenterX, newCenterY, this.draggingNode.z || 0);
+        cssObject.position.set(newCenterX, newCenterY, nodeZ);
       }
 
       // 연결된 3D 튜브 라인(엣지) 및 라벨 실시간 갱신
@@ -439,26 +460,16 @@ class Canvas3DEngine {
     let touchStartX = 0;
     let touchStartY = 0;
 
-    const onTouchStart = (e) => {
-      // 🎯 액션 버튼(삭제, 수정, 연결 등) 터치 시 카드 드래그/롱프레스 발동 방지
-      if (e.target && e.target.closest && (e.target.closest('.node-action-btn') || e.target.closest('button') || e.target.closest('a'))) {
-        return;
-      }
-
-      if (window.app && window.app.isConnectingMode) {
-        window.app.completeConnecting(node.id);
-        return;
-      }
-
-      const touch = e.touches ? e.touches[0] : e;
-      touchStartX = touch.clientX;
-      touchStartY = touch.clientY;
+    const startDragHandler = (clientX, clientY) => {
+      touchStartX = clientX;
+      touchStartY = clientY;
       isLongPressTriggered = false;
 
       // 🎯 3D 노드 드래그 시작
-      this.startNodeDrag(node, touch.clientX, touch.clientY);
+      this.startNodeDrag(node, clientX, clientY);
 
       el.classList.add('pressing');
+      if (pressTimer) clearTimeout(pressTimer);
       pressTimer = setTimeout(() => {
         // 이동하지 않고 가만히 꾹 누르고 있을 때만 롱프레스 수정 모달 오픈
         if (!this.hasMovedDrag) {
@@ -470,27 +481,20 @@ class Canvas3DEngine {
           window.app.openNodeEditModalFor(node.id);
         }
       }, 450);
+      this.currentPressTimer = pressTimer;
     };
 
-    const onTouchMove = (e) => {
-      const touch = e.touches ? e.touches[0] : e;
-      const dist = Math.hypot(touch.clientX - touchStartX, touch.clientY - touchStartY);
-      // 손가락이나 마우스가 움직이면 롱프레스 취소
-      if (dist > 6) {
-        el.classList.remove('pressing');
-        if (pressTimer) {
-          clearTimeout(pressTimer);
-          pressTimer = null;
-        }
-      }
-    };
-
-    const onTouchEnd = (e) => {
+    const cancelPress = () => {
       el.classList.remove('pressing');
       if (pressTimer) {
         clearTimeout(pressTimer);
         pressTimer = null;
       }
+      this.currentPressTimer = null;
+    };
+
+    const endDragHandler = () => {
+      cancelPress();
       if (!isLongPressTriggered && !this.hasMovedDrag) {
         if (window.app && window.app.isConnectingMode) return;
         this.selectNode(node.id);
@@ -499,20 +503,65 @@ class Canvas3DEngine {
       this.endNodeDrag();
     };
 
-    el.addEventListener('touchstart', onTouchStart, { passive: true });
-    el.addEventListener('touchmove', onTouchMove, { passive: true });
-    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    // 🎯 태블릿 터치 이벤트 바인딩
+    el.addEventListener('touchstart', (e) => {
+      if (e.target && e.target.closest && (e.target.closest('.node-action-btn') || e.target.closest('button') || e.target.closest('a') || e.target.closest('input'))) {
+        return;
+      }
+      if (window.app && window.app.isConnectingMode) {
+        window.app.completeConnecting(node.id);
+        return;
+      }
+      if (e.touches && e.touches.length === 1) {
+        e.stopPropagation(); // OrbitControls 회전 간섭 방지
+        const t = e.touches[0];
+        startDragHandler(t.clientX, t.clientY);
+      }
+    }, { passive: false });
 
-    // 마우스 이벤트 바인딩
+    el.addEventListener('touchmove', (e) => {
+      if (this.isDraggingNode && e.touches && e.touches.length === 1) {
+        e.preventDefault(); // 스크롤 방지
+        e.stopPropagation();
+        const dist = Math.hypot(e.touches[0].clientX - touchStartX, e.touches[0].clientY - touchStartY);
+        if (dist > 4) cancelPress();
+      }
+    }, { passive: false });
+
+    el.addEventListener('touchend', (e) => {
+      endDragHandler();
+    });
+
+    // 🎯 데스크톱 마우스 이벤트 바인딩
     el.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return; // 마우스 좌클릭만 처리
-      e.stopPropagation();
-      onTouchStart(e);
+      if (e.target && e.target.closest && (e.target.closest('.node-action-btn') || e.target.closest('button') || e.target.closest('a') || e.target.closest('input'))) {
+        return;
+      }
+      if (window.app && window.app.isConnectingMode) {
+        window.app.completeConnecting(node.id);
+        return;
+      }
+      e.preventDefault(); // 텍스트 선택 및 네이티브 드래그 방지 (마우스 이동 시 드래그 정상 작동)
+      e.stopPropagation(); // OrbitControls 회전 간섭 방지
+      startDragHandler(e.clientX, e.clientY);
       this.selectNode(node.id);
     });
 
-    el.addEventListener('mousemove', onTouchMove);
-    el.addEventListener('mouseup', onTouchEnd);
+    el.addEventListener('mousemove', (e) => {
+      if (this.isDraggingNode) {
+        const dist = Math.hypot(e.clientX - touchStartX, e.clientY - touchStartY);
+        if (dist > 4) cancelPress();
+      }
+    });
+
+    el.addEventListener('mouseup', (e) => {
+      endDragHandler();
+    });
+
+    el.addEventListener('dragstart', (e) => {
+      e.preventDefault();
+    });
 
     el.addEventListener('dblclick', (e) => {
       e.stopPropagation();
