@@ -170,13 +170,39 @@ class Canvas3DEngine {
     this.cssRenderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 
     // 🎯 전역 3D 노드 드래그 리스너 (마우스 & 터치)
+    this.isAltPressed = false;
+    this.pendingMouseDownNode = null;
+    this.lastMousePos = { x: 0, y: 0 };
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Alt') {
+        this.isAltPressed = true;
+        // 노드를 클릭하고 누른 상태에서 Alt를 눌렀을 때 즉시 3D 이동 시작
+        if (this.pendingMouseDownNode && !this.isDraggingNode) {
+          this.startNodeDrag(this.pendingMouseDownNode, this.lastMousePos.x, this.lastMousePos.y);
+        }
+      }
+    });
+
+    window.addEventListener('keyup', (e) => {
+      if (e.key === 'Alt') {
+        this.isAltPressed = false;
+      }
+    });
+
     window.addEventListener('mousemove', (e) => {
+      this.lastMousePos = { x: e.clientX, y: e.clientY };
+      // 노드를 누른 채 마우스를 움직일 때 Alt가 눌려있으면 즉시 드래그 활성화
+      if (this.pendingMouseDownNode && (e.altKey || this.isAltPressed) && !this.isDraggingNode) {
+        this.startNodeDrag(this.pendingMouseDownNode, e.clientX, e.clientY);
+      }
       if (this.isDraggingNode) {
         this.onNodeDragMove(e.clientX, e.clientY);
       }
     });
 
     window.addEventListener('mouseup', () => {
+      this.pendingMouseDownNode = null;
       if (this.isDraggingNode) {
         this.endNodeDrag();
       }
@@ -443,6 +469,7 @@ class Canvas3DEngine {
         </div>
         <div style="display: flex; align-items: center; gap: 5px;">
           <div class="node-layer-badge" style="border-color:${layerInfo.color}; color:${layerInfo.color}">${layerInfo.name}</div>
+          <span class="node-action-btn move-btn" title="노드 이동 (터치 드래그 또는 Alt+드래그)" style="cursor: grab; color: #38bdf8; font-size: 13px; font-weight: bold; padding: 0 4px;" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();">✥</span>
           <button class="node-action-btn run-btn" title="이 노드부터 시뮬레이션 실행" style="color: #00f0ff;" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.sim.start('${node.id}');">⚡</button>
           <button class="node-action-btn connect-btn" title="다른 노드와 연결선 만들기" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.startConnecting('${node.id}');">🔗</button>
           <button class="node-action-btn edit-btn" title="노드 수정 (꾹 누르기 또는 터치)" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.openNodeEditModalFor('${node.id}');">✏️</button>
@@ -495,6 +522,7 @@ class Canvas3DEngine {
 
     const endDragHandler = () => {
       cancelPress();
+      this.pendingMouseDownNode = null;
       if (!isLongPressTriggered && !this.hasMovedDrag) {
         if (window.app && window.app.isConnectingMode) return;
         this.selectNode(node.id);
@@ -505,7 +533,7 @@ class Canvas3DEngine {
 
     // 🎯 태블릿 터치 이벤트 바인딩
     el.addEventListener('touchstart', (e) => {
-      if (e.target && e.target.closest && (e.target.closest('.node-action-btn') || e.target.closest('button') || e.target.closest('a') || e.target.closest('input'))) {
+      if (e.target && e.target.closest && (e.target.closest('button') || e.target.closest('a') || e.target.closest('input'))) {
         return;
       }
       if (window.app && window.app.isConnectingMode) {
@@ -535,7 +563,7 @@ class Canvas3DEngine {
     // 🎯 데스크톱 마우스 이벤트 바인딩
     el.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return; // 마우스 좌클릭만 처리
-      if (e.target && e.target.closest && (e.target.closest('.node-action-btn') || e.target.closest('button') || e.target.closest('a') || e.target.closest('input'))) {
+      if (e.target && e.target.closest && (e.target.closest('button') || e.target.closest('a') || e.target.closest('input'))) {
         return;
       }
       if (window.app && window.app.isConnectingMode) {
@@ -544,6 +572,10 @@ class Canvas3DEngine {
       }
       e.preventDefault(); // 텍스트 선택 및 네이티브 드래그 방지 (마우스 이동 시 드래그 정상 작동)
       e.stopPropagation(); // OrbitControls 회전 간섭 방지
+
+      this.pendingMouseDownNode = node;
+      this.lastMousePos = { x: e.clientX, y: e.clientY };
+
       startDragHandler(e.clientX, e.clientY);
       this.selectNode(node.id);
     });
