@@ -169,52 +169,71 @@ class Canvas3DEngine {
     // 마우스 우클릭 기본 방지
     this.cssRenderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
 
-    // 🎯 전역 3D 노드 드래그 리스너 (마우스 & 터치)
+    // 🎯 전역 3D 노드 드래그 리스너 (PointerEvent 기반 - 마우스 & 태블릿 터치 통합)
     this.isAltPressed = false;
-    this.pendingMouseDownNode = null;
-    this.lastMousePos = { x: 0, y: 0 };
+    this.pendingNode = null;
+    this.pendingStartPos = { x: 0, y: 0 };
+    this.pendingIsMoveBtn = false;
+    this.lastPointerPos = { x: 0, y: 0 };
 
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Alt') {
+        e.preventDefault(); // Windows 메뉴바 활성화 방지!
         this.isAltPressed = true;
-        // 노드를 클릭하고 누른 상태에서 Alt를 눌렀을 때 즉시 3D 이동 시작
-        if (this.pendingMouseDownNode && !this.isDraggingNode) {
-          this.startNodeDrag(this.pendingMouseDownNode, this.lastMousePos.x, this.lastMousePos.y);
+        document.body.style.cursor = 'grab';
+        // 노드를 이미 누르고 있는 상태에서 Alt를 눌렀을 때 즉시 3D 이동 시작
+        if (this.pendingNode && !this.isDraggingNode) {
+          this.startNodeDrag(this.pendingNode, this.lastPointerPos.x, this.lastPointerPos.y);
         }
       }
     });
 
     window.addEventListener('keyup', (e) => {
       if (e.key === 'Alt') {
+        e.preventDefault();
         this.isAltPressed = false;
+        if (!this.isDraggingNode) {
+          document.body.style.cursor = 'default';
+        }
       }
     });
 
-    window.addEventListener('mousemove', (e) => {
-      this.lastMousePos = { x: e.clientX, y: e.clientY };
-      // 노드를 누른 채 마우스를 움직일 때 Alt가 눌려있으면 즉시 드래그 활성화
-      if (this.pendingMouseDownNode && (e.altKey || this.isAltPressed) && !this.isDraggingNode) {
-        this.startNodeDrag(this.pendingMouseDownNode, e.clientX, e.clientY);
+    window.addEventListener('pointermove', (e) => {
+      this.lastPointerPos = { x: e.clientX, y: e.clientY };
+
+      // 노드를 누른 상태에서 움직일 때: Alt 키, ✥ 핸들, 이미 선택된 노드, 또는 5px 이상 이동 시 드래그 활성화
+      if (this.pendingNode && !this.isDraggingNode) {
+        const dist = Math.hypot(e.clientX - this.pendingStartPos.x, e.clientY - this.pendingStartPos.y);
+        const isAlt = e.altKey || this.isAltPressed;
+        const isMoveBtn = this.pendingIsMoveBtn;
+        const isSelected = this.selectedNodeId === this.pendingNode.id;
+
+        if (isAlt || isMoveBtn || isSelected || dist > 5) {
+          this.startNodeDrag(this.pendingNode, e.clientX, e.clientY);
+        }
       }
+
       if (this.isDraggingNode) {
         this.onNodeDragMove(e.clientX, e.clientY);
       }
     });
 
-    window.addEventListener('mouseup', () => {
-      this.pendingMouseDownNode = null;
+    window.addEventListener('pointerup', () => {
+      if (this.pendingNode && !this.isDraggingNode) {
+        // 드래그 없이 클릭만 한 경우: 노드 선택
+        this.selectNode(this.pendingNode.id);
+        if (this.onNodeClick) this.onNodeClick(this.pendingNode);
+      }
+      this.pendingNode = null;
+      this.pendingIsMoveBtn = false;
       if (this.isDraggingNode) {
         this.endNodeDrag();
       }
     });
 
-    window.addEventListener('touchmove', (e) => {
-      if (this.isDraggingNode && e.touches.length === 1) {
-        this.onNodeDragMove(e.touches[0].clientX, e.touches[0].clientY);
-      }
-    }, { passive: false });
-
-    window.addEventListener('touchend', () => {
+    window.addEventListener('pointercancel', () => {
+      this.pendingNode = null;
+      this.pendingIsMoveBtn = false;
       if (this.isDraggingNode) {
         this.endNodeDrag();
       }
@@ -481,58 +500,12 @@ class Canvas3DEngine {
       </div>
     `;
 
-    // 🎯 롱 프레스 & 3D 드래그 인터랙션
-    let pressTimer = null;
-    let isLongPressTriggered = false;
-    let touchStartX = 0;
-    let touchStartY = 0;
+    // 🎯 3D 노드 인터랙션: OrbitControls로의 이벤트 전파를 원천 차단하여 카메라 회전 간섭 방지
+    let touchPressTimer = null;
 
-    const startDragHandler = (clientX, clientY) => {
-      touchStartX = clientX;
-      touchStartY = clientY;
-      isLongPressTriggered = false;
-
-      // 🎯 3D 노드 드래그 시작
-      this.startNodeDrag(node, clientX, clientY);
-
-      el.classList.add('pressing');
-      if (pressTimer) clearTimeout(pressTimer);
-      pressTimer = setTimeout(() => {
-        // 이동하지 않고 가만히 꾹 누르고 있을 때만 롱프레스 수정 모달 오픈
-        if (!this.hasMovedDrag) {
-          isLongPressTriggered = true;
-          el.classList.remove('pressing');
-          if (navigator.vibrate) navigator.vibrate(60);
-          this.endNodeDrag(); // 드래그 중단
-          this.selectNode(node.id);
-          window.app.openNodeEditModalFor(node.id);
-        }
-      }, 450);
-      this.currentPressTimer = pressTimer;
-    };
-
-    const cancelPress = () => {
-      el.classList.remove('pressing');
-      if (pressTimer) {
-        clearTimeout(pressTimer);
-        pressTimer = null;
-      }
-      this.currentPressTimer = null;
-    };
-
-    const endDragHandler = () => {
-      cancelPress();
-      this.pendingMouseDownNode = null;
-      if (!isLongPressTriggered && !this.hasMovedDrag) {
-        if (window.app && window.app.isConnectingMode) return;
-        this.selectNode(node.id);
-        if (this.onNodeClick) this.onNodeClick(node);
-      }
-      this.endNodeDrag();
-    };
-
-    // 🎯 태블릿 터치 이벤트 바인딩
-    el.addEventListener('touchstart', (e) => {
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return; // 마우스 좌클릭만 처리
+      // 액션 버튼(실행, 연결, 수정, 삭제) 클릭 시 정상 동작하도록 통과
       if (e.target && e.target.closest && (e.target.closest('button') || e.target.closest('a') || e.target.closest('input'))) {
         return;
       }
@@ -540,55 +513,48 @@ class Canvas3DEngine {
         window.app.completeConnecting(node.id);
         return;
       }
-      if (e.touches && e.touches.length === 1) {
-        e.stopPropagation(); // OrbitControls 회전 간섭 방지
-        const t = e.touches[0];
-        startDragHandler(t.clientX, t.clientY);
+
+      // OrbitControls 카메라 회전으로의 이벤트 전파 완전 차단!
+      e.stopPropagation();
+      e.preventDefault();
+
+      this.pendingNode = node;
+      this.pendingStartPos = { x: e.clientX, y: e.clientY };
+      this.lastPointerPos = { x: e.clientX, y: e.clientY };
+      this.pendingIsMoveBtn = !!(e.target && e.target.closest && e.target.closest('.move-btn'));
+
+      // 태블릿 터치인 경우: 이동하지 않고 가만히 꾹 누르고 있을 때만 롱프레스 모달 오픈 (450ms)
+      if (e.pointerType === 'touch' && !this.pendingIsMoveBtn && !e.altKey && !this.isAltPressed) {
+        if (touchPressTimer) clearTimeout(touchPressTimer);
+        touchPressTimer = setTimeout(() => {
+          if (!this.hasMovedDrag && this.pendingNode) {
+            if (navigator.vibrate) navigator.vibrate(60);
+            this.pendingNode = null;
+            this.endNodeDrag();
+            this.selectNode(node.id);
+            window.app.openNodeEditModalFor(node.id);
+          }
+        }, 450);
       }
-    }, { passive: false });
 
-    el.addEventListener('touchmove', (e) => {
-      if (this.isDraggingNode && e.touches && e.touches.length === 1) {
-        e.preventDefault(); // 스크롤 방지
-        e.stopPropagation();
-        const dist = Math.hypot(e.touches[0].clientX - touchStartX, e.touches[0].clientY - touchStartY);
-        if (dist > 4) cancelPress();
-      }
-    }, { passive: false });
-
-    el.addEventListener('touchend', (e) => {
-      endDragHandler();
-    });
-
-    // 🎯 데스크톱 마우스 이벤트 바인딩
-    el.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return; // 마우스 좌클릭만 처리
-      if (e.target && e.target.closest && (e.target.closest('button') || e.target.closest('a') || e.target.closest('input'))) {
-        return;
-      }
-      if (window.app && window.app.isConnectingMode) {
-        window.app.completeConnecting(node.id);
-        return;
-      }
-      e.preventDefault(); // 텍스트 선택 및 네이티브 드래그 방지 (마우스 이동 시 드래그 정상 작동)
-      e.stopPropagation(); // OrbitControls 회전 간섭 방지
-
-      this.pendingMouseDownNode = node;
-      this.lastMousePos = { x: e.clientX, y: e.clientY };
-
-      startDragHandler(e.clientX, e.clientY);
-      this.selectNode(node.id);
-    });
-
-    el.addEventListener('mousemove', (e) => {
-      if (this.isDraggingNode) {
-        const dist = Math.hypot(e.clientX - touchStartX, e.clientY - touchStartY);
-        if (dist > 4) cancelPress();
+      // Alt를 누르고 있거나 ✥ 이동 핸들을 눌렀다면 대기 없이 즉시 3D 드래그 시작
+      if (e.altKey || this.isAltPressed || this.pendingIsMoveBtn) {
+        this.startNodeDrag(node, e.clientX, e.clientY);
       }
     });
 
-    el.addEventListener('mouseup', (e) => {
-      endDragHandler();
+    el.addEventListener('pointermove', (e) => {
+      if (touchPressTimer && (this.hasMovedDrag || e.altKey || this.isAltPressed)) {
+        clearTimeout(touchPressTimer);
+        touchPressTimer = null;
+      }
+    });
+
+    el.addEventListener('pointerup', () => {
+      if (touchPressTimer) {
+        clearTimeout(touchPressTimer);
+        touchPressTimer = null;
+      }
     });
 
     el.addEventListener('dragstart', (e) => {
