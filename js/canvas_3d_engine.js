@@ -26,17 +26,17 @@ class Canvas3DEngine {
     // 레이어 정의 (Z축)
     this.layers = {
       // 📋 기획 & 플래닝 레이어 (최상위 사령탑 상단)
-      'goal': { z: 750, name: '🎯 핵심 목표 / 마일스톤', color: '#f59e0b' },
-      'idea': { z: 600, name: '💡 아이디어 / 기획 노트', color: '#10b981' },
-      'strategy': { z: 450, name: '📝 실행 전략 / 로드맵', color: '#6366f1' },
-      'task': { z: 300, name: '📌 단순 할일 / 태스크', color: '#0ea5e9' },
+      'goal': { z: 750, name: '🎯 목표', fullName: '🎯 핵심 목표 / 마일스톤', color: '#f59e0b' },
+      'idea': { z: 600, name: '💡 아이디어', fullName: '💡 아이디어 / 기획 노트', color: '#10b981' },
+      'strategy': { z: 450, name: '📝 전략', fullName: '📝 실행 전략 / 로드맵', color: '#6366f1' },
+      'task': { z: 300, name: '📌 태스크', fullName: '📌 단순 할일 / 태스크', color: '#0ea5e9' },
       // ⚙️ 시스템 & 아키텍처 레이어
-      'core': { z: 150, name: '⚡ 코어 사령탑 / 런처', color: '#38bdf8' },
-      'ai': { z: 0, name: '🤖 AI 에이전트 브레인', color: '#a855f7' },
-      'backend': { z: -200, name: '⚙️ 백엔드 & API 파이프라인', color: '#10b981' },
-      'frontend': { z: -100, name: '💻 프론트엔드 & UI', color: '#38bdf8' },
-      'database': { z: -450, name: '💾 데이터베이스 & 영속성', color: '#eab308' },
-      'finance': { z: -200, name: '📈 트레이딩 & 금융', color: '#f59e0b' }
+      'core': { z: 150, name: '⚡ 코어', fullName: '⚡ 코어 사령탑 / 런처', color: '#38bdf8' },
+      'ai': { z: 0, name: '🤖 AI', fullName: '🤖 AI 에이전트 브레인', color: '#a855f7' },
+      'backend': { z: -200, name: '⚙️ 백엔드', fullName: '⚙️ 백엔드 & API 파이프라인', color: '#10b981' },
+      'frontend': { z: -100, name: '💻 프론트', fullName: '💻 프론트엔드 & UI', color: '#38bdf8' },
+      'database': { z: -450, name: '💾 DB', fullName: '💾 데이터베이스 & 영속성', color: '#eab308' },
+      'finance': { z: -200, name: '📈 금융', fullName: '📈 트레이딩 & 금융', color: '#f59e0b' }
     };
 
     this.selectedNodeId = null;
@@ -482,16 +482,15 @@ class Canvas3DEngine {
 
     el.innerHTML = `
       <div class="node-3d-header" style="background: ${this.getNodeHeaderGradient(node.category)}">
-        <div style="display: flex; align-items: center; gap: 6px; overflow: hidden;">
+        <div class="node-title-container" style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; overflow: hidden;">
           <div class="node-title" title="${node.title}">${node.title}</div>
           ${runningBadgeHtml}
         </div>
-        <div style="display: flex; align-items: center; gap: 5px;">
-          <div class="node-layer-badge" style="border-color:${layerInfo.color}; color:${layerInfo.color}">${layerInfo.name}</div>
-          <span class="node-action-btn move-btn" title="노드 이동 (터치 드래그 또는 Alt+드래그)" style="cursor: grab; color: #38bdf8; font-size: 13px; font-weight: bold; padding: 0 4px;" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();">✥</span>
+        <div class="node-header-actions" style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+          <div class="node-layer-badge" style="border-color:${layerInfo.color}; color:${layerInfo.color}" title="${layerInfo.fullName || layerInfo.name}">${layerInfo.name}</div>
           <button class="node-action-btn run-btn" title="이 노드부터 시뮬레이션 실행" style="color: #00f0ff;" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.sim.start('${node.id}');">⚡</button>
           <button class="node-action-btn connect-btn" title="다른 노드와 연결선 만들기" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.startConnecting('${node.id}');">🔗</button>
-          <button class="node-action-btn edit-btn" title="노드 수정 (꾹 누르기 또는 터치)" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.openNodeEditModalFor('${node.id}');">✏️</button>
+          <button class="node-action-btn edit-btn" title="노드 수정" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.openNodeEditModalFor('${node.id}');">✏️</button>
           <button class="node-action-btn del-btn" title="노드 삭제" onmousedown="event.stopPropagation();" ontouchstart="event.stopPropagation();" onclick="event.stopPropagation(); window.app.deleteNodeById('${node.id}');">🗑️</button>
         </div>
       </div>
