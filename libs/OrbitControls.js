@@ -511,6 +511,23 @@
 
 			function handleMouseWheel( event ) {
 
+				// 좌우 스크롤(틸트 휠 / 트랙패드 / Shift+휠): 카메라 가로 팬
+				if ( event.deltaX !== 0 && Math.abs( event.deltaX ) > Math.abs( event.deltaY ) ) {
+
+					pan( - event.deltaX, 0 );
+					scope.update();
+					return;
+
+				}
+
+				if ( event.shiftKey && event.deltaY !== 0 ) {
+
+					pan( - event.deltaY, 0 );
+					scope.update();
+					return;
+
+				}
+
 				if ( event.deltaY < 0 ) {
 
 					dollyIn( getZoomScale() );
@@ -524,6 +541,7 @@
 				scope.update();
 
 			}
+
 
 			function handleKeyDown( event ) {
 

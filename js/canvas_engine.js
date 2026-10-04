@@ -232,6 +232,19 @@ class CanvasEngine {
     // 휠 줌 (마우스 커서 중심 피벗 줌)
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
+
+      // 좌우 스크롤(틸트 휠 / 트랙패드 / Shift+휠): 가로 패닝
+      if (e.deltaX !== 0 && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        this.viewport.x += e.deltaX / this.viewport.zoom;
+        if (this.onDataChange) this.onDataChange('viewport');
+        return;
+      }
+      if (e.shiftKey && e.deltaY !== 0) {
+        this.viewport.x += e.deltaY / this.viewport.zoom;
+        if (this.onDataChange) this.onDataChange('viewport');
+        return;
+      }
+
       const rect = this.canvas.getBoundingClientRect();
       const mouseScreenX = e.clientX - rect.left;
       const mouseScreenY = e.clientY - rect.top;
