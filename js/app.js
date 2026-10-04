@@ -1419,7 +1419,7 @@ class ProjectMapApp {
       prompt = "프로젝트 맵의 최신 캔버스 명세서를 바탕으로 시스템 아키텍처 및 DB 스키마 무결성을 검토해줘.";
     }
     if (prompt) {
-      if (this.aiPromptInputEl) this.aiPromptInputEl.value = prompt;
+      if (this.aiPromptInputEl) this.aiPromptInputEl.value = '';
       this.executeAiQuery(prompt);
     }
   }
@@ -1428,6 +1428,7 @@ class ProjectMapApp {
     if (!this.aiPromptInputEl) return;
     const query = this.aiPromptInputEl.value.trim();
     if (!query) return;
+    this.aiPromptInputEl.value = ''; // 🎯 전송 즉시 입력창 비우기
     this.executeAiQuery(query);
   }
 
@@ -1455,6 +1456,9 @@ class ProjectMapApp {
     if (this.aiSendBtnEl) {
       this.aiSendBtnEl.disabled = false;
       this.aiSendBtnEl.textContent = "전송";
+    }
+    if (this.aiPromptInputEl) {
+      this.aiPromptInputEl.focus(); // 🎯 다음 입력을 위해 포커스 복귀
     }
     this.aiChatResponseEl.textContent = response || "(빈 응답)";
     this.showToast('🤖 어딧노 AI 작업 반영 및 응답 수신 완료');
