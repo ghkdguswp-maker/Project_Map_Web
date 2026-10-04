@@ -303,6 +303,11 @@ class ProjectMapApp {
           if (this.backend.statusMessage) {
             this.backend.statusMessage.connect((msg) => this.showToast(msg));
           }
+          if (this.backend.aiResponseReady) {
+            this.backend.aiResponseReady.connect((response) => {
+              this.handleAiResponse(response);
+            });
+          }
 
           // 데스크톱 앱에서도 백그라운드 동기화 감지기 가동
           this.startRealtimeCloudSyncLoop();
@@ -1432,20 +1437,27 @@ class ProjectMapApp {
       return;
     }
 
-    this.aiChatResponseEl.textContent = `⏳ [어딧노 AI 사령탑 분석 중...]\n\n마스터의 지시: "${prompt}"\n\nAI_Core 엔진 및 전담 도구(manage_project_map)와 통신하고 있습니다. 잠시만 기다려 주세요...`;
+    this.aiChatResponseEl.textContent = `⏳ [어딧노 AI 사령탑 분석 중...]\n\n마스터의 지시: "${prompt}"\n\nAI_Core 엔진 및 전담 도구(manage_project_map)와 백그라운드에서 통신하고 있습니다.\n3D/2D 화면 조작 및 맵 편집을 자유롭게 계속하실 수 있습니다...`;
     if (this.aiSendBtnEl) {
       this.aiSendBtnEl.disabled = true;
       this.aiSendBtnEl.textContent = "분석중...";
     }
 
-    this.backend.askEoditnoAi(prompt, (response) => {
-      if (this.aiSendBtnEl) {
-        this.aiSendBtnEl.disabled = false;
-        this.aiSendBtnEl.textContent = "전송";
+    // 🚀 비동기 백그라운드 호출 (Qt 메인 GUI 스레드 0ms 즉시 반환 -> 3D 캔버스 60fps 무결점 유지)
+    this.backend.askEoditnoAi(prompt, (directRes) => {
+      if (directRes && typeof directRes === 'string') {
+        this.handleAiResponse(directRes);
       }
-      this.aiChatResponseEl.textContent = response || "(빈 응답)";
-      this.showToast('어딧노 AI 응답 수신 완료');
     });
+  }
+
+  handleAiResponse(response) {
+    if (this.aiSendBtnEl) {
+      this.aiSendBtnEl.disabled = false;
+      this.aiSendBtnEl.textContent = "전송";
+    }
+    this.aiChatResponseEl.textContent = response || "(빈 응답)";
+    this.showToast('🤖 어딧노 AI 작업 반영 및 응답 수신 완료');
   }
 
   copyAiResponse() {
