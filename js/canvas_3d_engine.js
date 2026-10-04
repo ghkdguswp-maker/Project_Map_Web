@@ -54,6 +54,8 @@ class Canvas3DEngine {
     this.dragStartScreen = { x: 0, y: 0 };
     this.hasMovedDrag = false;
 
+    this.cameraInitialized = false;
+
     // 콜백들
     this.onNodeClick = null;
     this.onNodeDoubleClick = null;
@@ -76,7 +78,7 @@ class Canvas3DEngine {
 
     // 2. Camera
     this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 20000);
-    this.camera.position.set(0, -1800, 1500);
+    this.camera.position.set(600, -1600, 1800);
 
     // 3. WebGL Renderer (배경, 그리드 플로어, 3D 파이프라인 라인)
     this.webglRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -104,7 +106,7 @@ class Canvas3DEngine {
     this.controls.screenSpacePanning = true;
     this.controls.minDistance = 200;
     this.controls.maxDistance = 8000;
-    this.controls.target.set(600, 400, 0);
+    this.controls.target.set(600, -600, 0);
 
     // 엣지 라인들을 담을 3D 그룹
     this.edgeGroup = new THREE.Group();
@@ -149,14 +151,15 @@ class Canvas3DEngine {
       this.floorGroup.remove(this.floorGroup.children[0]);
     }
 
-    const planeSize = 3000;
+    const center = this.getSceneCenter();
+    const planeSize = Math.max(3000, this.getSceneSpan() * 2.2);
     const gridDivisions = 30;
 
     Object.entries(this.layers).forEach(([cat, info]) => {
       // 층 그리드 헬퍼 (XY 평면 상에 Z값 적용)
       const grid = new THREE.GridHelper(planeSize, gridDivisions, info.color, 0x1f293d);
       grid.rotation.x = Math.PI / 2; // XY 평면으로 눕힘
-      grid.position.set(600, 400, info.z);
+      grid.position.set(center.x, center.y, info.z);
       grid.material.opacity = 0.25;
       grid.material.transparent = true;
       this.floorGroup.add(grid);
@@ -256,7 +259,7 @@ class Canvas3DEngine {
     this.raycaster.setFromCamera(mouse, this.camera);
     const nodeZ = node.z !== undefined ? node.z : (this.layers[node.category]?.z || 0);
     const nodeCenterX = node.x + node.width / 2;
-    const nodeCenterY = node.y + node.height / 2;
+    const nodeCenterY = -(node.y + node.height / 2); // 3D 월드 좌표는 -2D Y
     const nodeCenter = new THREE.Vector3(nodeCenterX, nodeCenterY, nodeZ);
 
     this.dragPlane.set(new THREE.Vector3(0, 0, 1), -nodeZ);
@@ -314,10 +317,10 @@ class Canvas3DEngine {
 
     if (this.raycaster.ray.intersectPlane(this.dragPlane, intersectPoint)) {
       const newCenterX = intersectPoint.x + this.dragOffset.x;
-      const newCenterY = intersectPoint.y + this.dragOffset.y;
+      const newCenterY = intersectPoint.y + this.dragOffset.y; // 3D Y
 
       this.draggingNode.x = newCenterX - this.draggingNode.width / 2;
-      this.draggingNode.y = newCenterY - this.draggingNode.height / 2;
+      this.draggingNode.y = -newCenterY - this.draggingNode.height / 2; // 3D Y에서 2D Y로 복원
       const nodeZ = this.draggingNode.z !== undefined ? this.draggingNode.z : (this.layers[this.draggingNode.category]?.z || 0);
 
       // 3D CSS3DObject 위치 동기화
@@ -379,6 +382,13 @@ class Canvas3DEngine {
 
     this.build3DNodes();
     this.build3DEdges();
+    this.buildFloorPlanes();
+
+    // 초기 로드 시 또는 첫 진입 시 카메라를 노드 맵 중앙에 맞춤
+    if (!this.cameraInitialized && this.nodes.length > 0) {
+      this.resetViewToCenter(false);
+      this.cameraInitialized = true;
+    }
   }
 
   // 3D HTML 인터랙티브 노드 생성 (CSS3DObject)
@@ -393,8 +403,12 @@ class Canvas3DEngine {
       const element = this.createNodeHTMLElement(node);
       const cssObject = new THREE.CSS3DObject(element);
 
-      // 3D 월드 좌표 배치 (중심점 보정)
-      cssObject.position.set(node.x + node.width / 2, node.y + node.height / 2, node.z || 0);
+      // 3D 월드 좌표 배치: 2D의 Top(Y=0)->Bottom(Y+) 방향을 3D Cartesian(Y+가 상단)에 일치시키기 위해 -Y 매핑
+      cssObject.position.set(
+        node.x + node.width / 2,
+        -(node.y + node.height / 2),
+        node.z || 0
+      );
 
       this.scene.add(cssObject);
       this.cssObjects.set(node.id, cssObject);
@@ -608,8 +622,8 @@ class Canvas3DEngine {
       const toNode = this.nodeMap.get(edge.to);
       if (!fromNode || !toNode) return;
 
-      const p1 = new THREE.Vector3(fromNode.x + fromNode.width, fromNode.y + fromNode.height / 2, fromNode.z || 0);
-      const p2 = new THREE.Vector3(toNode.x, toNode.y + toNode.height / 2, toNode.z || 0);
+      const p1 = new THREE.Vector3(fromNode.x + fromNode.width, -(fromNode.y + fromNode.height / 2), fromNode.z || 0);
+      const p2 = new THREE.Vector3(toNode.x, -(toNode.y + toNode.height / 2), toNode.z || 0);
 
       // 3D 베지어 곡선 생성
       const midPoint = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
@@ -718,7 +732,7 @@ class Canvas3DEngine {
   // 카메라 비행 애니메이션 (Fly-to Node)
   flyToNode(node) {
     if (!node) return;
-    const targetPos = new THREE.Vector3(node.x + node.width / 2, node.y + node.height / 2, node.z || 0);
+    const targetPos = new THREE.Vector3(node.x + node.width / 2, -(node.y + node.height / 2), node.z || 0);
     // 🎯 정면에서 노드를 편안하게 직시하도록 Z축 전면 카메라 배치
     const dist = Math.max(750, Math.max(node.width || 260, node.height || 200) * 1.8);
     const cameraOffset = new THREE.Vector3(0, 0, dist);
@@ -727,22 +741,81 @@ class Canvas3DEngine {
     this.animateCamera(cameraTargetPos, targetPos, 800);
   }
 
-  // 카메라 시점 프리셋
+  // 장면 중심점 계산 (2D 화면의 Y-down 좌표를 3D Cartesian Y-up으로 변환하여 계산)
+  getSceneCenter() {
+    if (!this.nodes || this.nodes.length === 0) {
+      return new THREE.Vector3(600, -400, 0);
+    }
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    this.nodes.forEach(n => {
+      const w = n.width || 320;
+      const h = n.height || 180;
+      minX = Math.min(minX, n.x);
+      maxX = Math.max(maxX, n.x + w);
+      minY = Math.min(minY, n.y);
+      maxY = Math.max(maxY, n.y + h);
+    });
+    const centerX = (minX + maxX) / 2;
+    const centerY = -((minY + maxY) / 2);
+    return new THREE.Vector3(centerX, centerY, 0);
+  }
+
+  // 장면 전체 크기(스팬) 계산
+  getSceneSpan() {
+    if (!this.nodes || this.nodes.length === 0) return 2000;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    this.nodes.forEach(n => {
+      const w = n.width || 320;
+      const h = n.height || 180;
+      minX = Math.min(minX, n.x);
+      maxX = Math.max(maxX, n.x + w);
+      minY = Math.min(minY, n.y);
+      maxY = Math.max(maxY, n.y + h);
+    });
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
+    return Math.max(spanX, spanY, 1200);
+  }
+
+  // 맵 중앙 기준 3D 홈 뷰 설정
+  resetViewToCenter(animate = true) {
+    const center = this.getSceneCenter();
+    const span = this.getSceneSpan();
+    const dist = Math.max(span * 1.15, 1800);
+    const targetCamPos = new THREE.Vector3(
+      center.x - dist * 0.25,
+      center.y - dist * 0.75,
+      dist * 0.85
+    );
+
+    if (animate) {
+      this.animateCamera(targetCamPos, center, 800);
+    } else {
+      this.camera.position.copy(targetCamPos);
+      this.controls.target.copy(center);
+      this.controls.update();
+    }
+  }
+
+  // 카메라 시점 프리셋 (2D 좌표 순서와 일치하도록 보정)
   setViewPreset(preset) {
-    const center = new THREE.Vector3(600, 400, 0);
+    const center = this.getSceneCenter();
+    const span = this.getSceneSpan();
+    const dist = Math.max(span * 1.15, 1800);
 
     switch (preset) {
-      case 'top': // 1번 키: Top 뷰 (평면 조감도)
-        this.animateCamera(new THREE.Vector3(600, 400, 2400), center, 800);
+      case 'top': // 1번 키: Top 뷰 (평면 조감도 - 2D와 좌우/상하 배치가 100% 동일)
+        this.animateCamera(new THREE.Vector3(center.x, center.y, dist * 1.3), center, 800);
         break;
       case 'front': // 2번 키: Front 뷰 (Z축 층별 조망)
-        this.animateCamera(new THREE.Vector3(600, -2200, 0), center, 800);
+        this.animateCamera(new THREE.Vector3(center.x, center.y - dist * 1.2, 0), center, 800);
         break;
       case 'iso': // 3번 키: Isometric 입체 사선 뷰
-        this.animateCamera(new THREE.Vector3(-1200, -1600, 1400), center, 800);
+        this.animateCamera(new THREE.Vector3(center.x - dist * 0.6, center.y - dist * 0.8, dist * 0.8), center, 800);
         break;
-      case 'reset': // R 키: 기본 홈 뷰
-        this.animateCamera(new THREE.Vector3(0, -1800, 1500), center, 800);
+      case 'reset': // R 키: 기본 3D 홈 뷰
+      default:
+        this.animateCamera(new THREE.Vector3(center.x - dist * 0.25, center.y - dist * 0.75, dist * 0.85), center, 800);
         break;
     }
   }
@@ -824,8 +897,9 @@ class Canvas3DEngine {
     // 2. 노드들의 3D 위치 및 Z축 높이별 점 찍기
     const scale = 0.035;
     this.nodes.forEach(n => {
-      const rx = cx + (n.x - this.controls.target.x) * scale;
-      const ry = cy + (n.y - this.controls.target.y) * scale;
+      const rx = cx + ((n.x + (n.width || 320) / 2) - this.controls.target.x) * scale;
+      const node3DY = -(n.y + (n.height || 180) / 2);
+      const ry = cy - (node3DY - this.controls.target.y) * scale;
 
       const layerInfo = this.layers[n.category] || { color: '#38bdf8' };
       ctx.fillStyle = layerInfo.color;
