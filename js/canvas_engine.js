@@ -867,24 +867,39 @@ class CanvasEngine {
       const isSelected = this.selectedNodeIds.has(node.id);
       const isHovered = this.hoveredNode && this.hoveredNode.id === node.id;
       const isGroup = node.type === 'group';
+      const catInfo = this.getNodeCategoryInfo(node.category);
 
       ctx.save();
 
       if (isGroup) {
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.65)';
         ctx.strokeStyle = isSelected ? '#c084fc' : (isHovered ? '#d8b4fe' : 'rgba(168, 85, 247, 0.6)');
         ctx.lineWidth = isSelected ? 3 : 2;
         ctx.setLineDash([8, 6]);
       } else {
-        ctx.fillStyle = '#161f30';
-        ctx.strokeStyle = isSelected ? '#00f0ff' : (isHovered ? '#38bdf8' : '#334155');
-        ctx.lineWidth = isSelected ? 2.5 : 1.2;
+        ctx.fillStyle = '#111827';
+        if (isSelected) {
+          ctx.strokeStyle = '#00f0ff';
+          ctx.lineWidth = 2.5;
+          ctx.shadowColor = 'rgba(0, 240, 255, 0.45)';
+          ctx.shadowBlur = 10;
+        } else if (isHovered) {
+          ctx.strokeStyle = catInfo.color;
+          ctx.lineWidth = 2;
+          ctx.shadowColor = catInfo.color;
+          ctx.shadowBlur = 8;
+        } else {
+          ctx.strokeStyle = catInfo.border;
+          ctx.lineWidth = 1.4;
+          ctx.shadowBlur = 0;
+        }
         ctx.setLineDash([]);
       }
 
       this.roundRect(ctx, node.x, node.y, node.width, node.height, isGroup ? 16 : 10);
       ctx.fill();
       ctx.stroke();
+      ctx.shadowBlur = 0;
       ctx.setLineDash([]);
 
       if (isUltraLowLOD) {
@@ -892,28 +907,54 @@ class CanvasEngine {
         continue;
       }
 
-      // 노드 헤더
+      // 노드 헤더 생생한 그라데이션 (3D와 통일된 사이버네틱 컬러)
       const headerHeight = 36;
-      ctx.fillStyle = this.getNodeCategoryColor(node.category);
+      const headerGrad = ctx.createLinearGradient(node.x, node.y, node.x + node.width, node.y);
+      headerGrad.addColorStop(0, catInfo.gradStart);
+      headerGrad.addColorStop(1, catInfo.gradEnd);
+      ctx.fillStyle = headerGrad;
       this.roundRect(ctx, node.x, node.y, node.width, headerHeight, [isGroup ? 16 : 10, isGroup ? 16 : 10, 0, 0]);
       ctx.fill();
 
-      // 타이틀
-      const maxTitleWidth = isSelected ? node.width - 65 : (node.sub_board_id ? node.width - 45 : node.width - 24);
+      // 헤더 하단 은은한 하이라이트 분리선
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.fillRect(node.x, node.y + headerHeight - 1, node.width, 1);
+
+      // 카테고리 아이콘 렌더링
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const icon = catInfo.icon;
+      ctx.fillText(icon, node.x + 10, node.y + headerHeight / 2);
+
+      const iconOffset = 28;
+
+      // 타이틀 (선명한 화이트 볼드 - 헤더에 묻히지 않도록 또렷하게 렌더링)
+      ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Pretendard", sans-serif';
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+
+      const rightButtonsWidth = isSelected ? 65 : (node.sub_board_id ? 45 : 24);
+      const maxTitleWidth = Math.max(30, node.width - iconOffset - rightButtonsWidth);
       const truncatedTitle = this.truncateText(ctx, node.title || 'Untitled Node', maxTitleWidth);
-      ctx.fillText(truncatedTitle, node.x + 12, node.y + headerHeight / 2);
+      ctx.fillText(truncatedTitle, node.x + iconOffset, node.y + headerHeight / 2);
 
       // 서브보드 뱃지
       if (node.sub_board_id) {
         const badgeX = isSelected ? node.x + node.width - 46 : node.x + node.width - 20;
         ctx.fillStyle = '#a855f7';
         ctx.beginPath();
-        ctx.arc(badgeX, node.y + headerHeight / 2, 7, 0, Math.PI * 2);
+        ctx.arc(badgeX, node.y + headerHeight / 2, 7.5, 0, Math.PI * 2);
         ctx.fill();
+        ctx.strokeStyle = '#e9d5ff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 9px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('▼', badgeX, node.y + headerHeight / 2 + 1);
+        ctx.textBaseline = 'middle';
+        ctx.fillText('▼', badgeX, node.y + headerHeight / 2);
       }
 
       // 🎯 선택된 노드일 경우 우측 상단에 🗑️ 삭제 퀵 액션 버튼 렌더링
@@ -938,8 +979,8 @@ class CanvasEngine {
         this.renderNodeContent(ctx, node, headerHeight);
       }
 
-      // 우측 포트
-      ctx.fillStyle = '#38bdf8';
+      // 우측 포트 (화사한 네온 아쿠아)
+      ctx.fillStyle = '#00f0ff';
       ctx.strokeStyle = '#0f172a';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -1099,15 +1140,30 @@ class CanvasEngine {
       }
 
       default: {
-        ctx.font = '12px sans-serif';
-        ctx.fillStyle = '#94a3b8';
+        ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Pretendard", sans-serif';
+        ctx.fillStyle = '#cbd5e1';
         ctx.textAlign = 'left';
-        const desc = this.truncateText(ctx, node.description || '', availableWidth);
-        ctx.fillText(desc, node.x + padding, contentY + 10);
+
+        const rawDesc = node.description || '';
+        const lines = rawDesc.split('\n').filter(l => l.trim().length > 0);
+        let lineY = contentY + 12;
+        const maxLines = Math.min(lines.length, 3);
+
+        if (lines.length > 0) {
+          for (let idx = 0; idx < maxLines; idx++) {
+            const truncatedLine = this.truncateText(ctx, lines[idx], availableWidth);
+            ctx.fillText(truncatedLine, node.x + padding, lineY);
+            lineY += 18;
+          }
+        } else {
+          ctx.fillStyle = '#64748b';
+          ctx.fillText('(설명 없음)', node.x + padding, lineY);
+          lineY += 18;
+        }
 
         if (node.tags && node.tags.length > 0) {
           let tagX = node.x + padding;
-          const tagY = contentY + 36;
+          const tagY = Math.max(lineY + 6, node.y + node.height - 28);
           ctx.font = '10px monospace';
 
           node.tags.slice(0, 3).forEach(tag => {
@@ -1128,15 +1184,24 @@ class CanvasEngine {
     }
   }
 
+  getNodeCategoryInfo(category) {
+    const categories = {
+      'goal': { icon: '🎯', name: '목표/비전', color: '#f59e0b', gradStart: '#92400e', gradEnd: '#d97706', border: 'rgba(245, 158, 11, 0.45)' },
+      'idea': { icon: '💡', name: '아이디어', color: '#10b981', gradStart: '#065f46', gradEnd: '#059669', border: 'rgba(16, 185, 129, 0.45)' },
+      'strategy': { icon: '📝', name: '전략/로드맵', color: '#818cf8', gradStart: '#3730a3', gradEnd: '#4f46e5', border: 'rgba(129, 140, 248, 0.45)' },
+      'task': { icon: '📌', name: '태스크', color: '#38bdf8', gradStart: '#075985', gradEnd: '#0284c7', border: 'rgba(56, 189, 248, 0.45)' },
+      'core': { icon: '⚡', name: '코어 사령탑', color: '#38bdf8', gradStart: '#1e3a5f', gradEnd: '#1e40af', border: 'rgba(56, 189, 248, 0.45)' },
+      'ai': { icon: '🤖', name: 'AI 에이전트', color: '#c084fc', gradStart: '#4c1d95', gradEnd: '#6b21a8', border: 'rgba(192, 132, 252, 0.45)' },
+      'backend': { icon: '⚙️', name: '백엔드/API', color: '#34d399', gradStart: '#064e3b', gradEnd: '#047857', border: 'rgba(52, 211, 153, 0.45)' },
+      'frontend': { icon: '💻', name: '프론트/UI', color: '#38bdf8', gradStart: '#0284c7', gradEnd: '#38bdf8', border: 'rgba(56, 189, 248, 0.45)' },
+      'database': { icon: '💾', name: '데이터베이스', color: '#fbbf24', gradStart: '#78350f', gradEnd: '#92400e', border: 'rgba(251, 191, 36, 0.45)' },
+      'finance': { icon: '📈', name: '금융/트레이딩', color: '#f59e0b', gradStart: '#713f12', gradEnd: '#854d0e', border: 'rgba(245, 158, 11, 0.45)' }
+    };
+    return categories[category] || { icon: '📦', name: '일반 모듈', color: '#94a3b8', gradStart: '#1e293b', gradEnd: '#334155', border: 'rgba(148, 163, 184, 0.35)' };
+  }
+
   getNodeCategoryColor(category) {
-    switch (category) {
-      case 'core': return '#1e3a5f';
-      case 'ai': return '#4c1d95';
-      case 'backend': return '#064e3b';
-      case 'database': return '#78350f';
-      case 'finance': return '#713f12';
-      default: return '#1e293b';
-    }
+    return this.getNodeCategoryInfo(category).color;
   }
 
   truncateText(ctx, text, maxWidth) {
